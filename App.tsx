@@ -45,9 +45,13 @@ const App: React.FC = () => {
     const savedStats = localStorage.getItem(STORAGE_KEY_STATS);
     const savedTheme = localStorage.getItem(STORAGE_KEY_THEME) as 'light' | 'dark' | null;
     
-    if (savedTasks) {
-      const parsedTasks: Task[] = JSON.parse(savedTasks);
-      setTasks(parsedTasks);
+    try {
+      if (savedTasks) {
+        const parsedTasks: Task[] = JSON.parse(savedTasks);
+        setTasks(parsedTasks);
+      }
+    } catch (e) {
+      console.error("Failed to parse tasks:", e);
     }
     
     if (savedTheme) {
@@ -56,31 +60,35 @@ const App: React.FC = () => {
       setTheme('dark');
     }
 
-    if (savedStats) {
-      const parsedStats: UserStats = JSON.parse(savedStats);
-      
-      const now = new Date();
-      now.setHours(0, 0, 0, 0);
-      
-      const lastActivity = parsedStats.lastActivityTimestamp ? new Date(parsedStats.lastActivityTimestamp) : null;
-      if (lastActivity) {
-        lastActivity.setHours(0, 0, 0, 0);
+    try {
+      if (savedStats) {
+        const parsedStats: UserStats = JSON.parse(savedStats);
         
-        const diffInDays = Math.floor((now.getTime() - lastActivity.getTime()) / (1000 * 60 * 60 * 24));
-        const isMonday = now.getDay() === 1;
-        const isSunday = now.getDay() === 0;
-
-        if (diffInDays > 1) {
-          const skipSundayGrace = (diffInDays === 2 && isMonday);
-          const sundayTodayGrace = (diffInDays === 1 && isSunday);
+        const now = new Date();
+        now.setHours(0, 0, 0, 0);
+        
+        const lastActivity = parsedStats.lastActivityTimestamp ? new Date(parsedStats.lastActivityTimestamp) : null;
+        if (lastActivity) {
+          lastActivity.setHours(0, 0, 0, 0);
           
-          if (!skipSundayGrace && !sundayTodayGrace) {
-            parsedStats.streak = 0;
+          const diffInDays = Math.floor((now.getTime() - lastActivity.getTime()) / (1000 * 60 * 60 * 24));
+          const isMonday = now.getDay() === 1;
+          const isSunday = now.getDay() === 0;
+
+          if (diffInDays > 1) {
+            const skipSundayGrace = (diffInDays === 2 && isMonday);
+            const sundayTodayGrace = (diffInDays === 1 && isSunday);
+            
+            if (!skipSundayGrace && !sundayTodayGrace) {
+              parsedStats.streak = 0;
+            }
           }
         }
+        
+        setStats(parsedStats);
       }
-      
-      setStats(parsedStats);
+    } catch (e) {
+      console.error("Failed to parse stats:", e);
     }
   }, []);
 
