@@ -1,13 +1,12 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Search, Filter, X, Calendar as CalendarIcon, Repeat, CheckCircle, Flame, CalendarClock, Menu } from 'lucide-react';
+import { Plus, Search, Filter, X, Calendar as CalendarIcon, Repeat, CheckCircle, Flame, CalendarClock, Menu, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Task, UserStats, TaskStatus, Priority, RecurrenceType } from './types';
 import { STATUS_CONFIG, XP_PER_TASK, NEXT_LEVEL_XP_BASE } from './constants';
 import Sidebar from './components/Sidebar';
 import TaskCard from './components/TaskCard';
 import TaskDetailModal from './components/TaskDetailModal';
 import ProfileModal from './components/ProfileModal';
-import CelebrationEffect from './components/CelebrationEffect';
 
 const STORAGE_KEY_TASKS = 'gamified-task-master-tasks';
 const STORAGE_KEY_STATS = 'gamified-task-master-stats';
@@ -31,14 +30,56 @@ const App: React.FC = () => {
   const [viewingTask, setViewingTask] = useState<Task | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDate, setSelectedDate] = useState<number | null>(null);
-  const [showCelebration, setShowCelebration] = useState(false);
   
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Estados para Mobile e Interação
   const [activeTab, setActiveTab] = useState<TaskStatus>('todo');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isDesktopSidebarOpen, setIsDesktopSidebarOpen] = useState(true);
   const [isDraggingGlobal, setIsDraggingGlobal] = useState(false);
+  const hasCheckedPenalties = useRef(false);
+
+  useEffect(() => {
+    if (tasks.length > 0 && stats.lastPenaltyTimestamp !== undefined && !hasCheckedPenalties.current) {
+      const now = new Date();
+      now.setHours(0, 0, 0, 0);
+      const lastCheck = new Date(stats.lastPenaltyTimestamp);
+      lastCheck.setHours(0, 0, 0, 0);
+      
+      const diffDays = Math.floor((now.getTime() - lastCheck.getTime()) / (1000 * 60 * 60 * 24));
+      
+      if (diffDays > 0) {
+        let totalPenalty = 0;
+        for (let i = 1; i <= diffDays; i++) {
+          const checkDate = new Date(lastCheck);
+          checkDate.setDate(checkDate.getDate() + i);
+          
+          tasks.forEach(task => {
+            if (task.status !== 'done') {
+              const taskDate = new Date(task.createdAt);
+              taskDate.setHours(0, 0, 0, 0);
+              if (checkDate.getTime() > taskDate.getTime()) {
+                totalPenalty += 10;
+              }
+            }
+          });
+        }
+        
+        if (totalPenalty > 0) {
+          applyPenalty(totalPenalty);
+        }
+        
+        setStats(prev => ({ ...prev, lastPenaltyTimestamp: now.getTime() }));
+        hasCheckedPenalties.current = true;
+      }
+    } else if (stats.lastPenaltyTimestamp === undefined && tasks.length > 0 && !hasCheckedPenalties.current) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      setStats(prev => ({ ...prev, lastPenaltyTimestamp: today.getTime() }));
+      hasCheckedPenalties.current = true;
+    }
+  }, [tasks, stats.lastPenaltyTimestamp]);
 
   useEffect(() => {
     const savedTasks = localStorage.getItem(STORAGE_KEY_TASKS);
@@ -189,6 +230,28 @@ const App: React.FC = () => {
     updateActivity();
   };
 
+  const applyPenalty = (amount: number) => {
+    setStats(prev => {
+      let newXp = prev.xp - amount;
+      let newLevel = prev.level;
+      
+      while (newXp < 0 && newLevel > 1) {
+        newLevel--;
+        const xpNeededForPrevLevel = newLevel * NEXT_LEVEL_XP_BASE;
+        newXp = xpNeededForPrevLevel + newXp;
+      }
+      
+      if (newXp < 0) newXp = 0;
+
+      return {
+        ...prev,
+        level: newLevel,
+        xp: newXp,
+        totalXp: Math.max(0, prev.totalXp - amount)
+      };
+    });
+  };
+
   const updateProfile = (data: Partial<UserStats>) => {
     setStats(prev => ({ ...prev, ...data }));
   };
@@ -229,11 +292,6 @@ const App: React.FC = () => {
     return new Date(timestamp).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
   };
 
-  const triggerCelebration = () => {
-    setShowCelebration(true);
-    setTimeout(() => setShowCelebration(false), 3000);
-  };
-
   const updateTask = (id: string, updates: Partial<Task>) => {
     setTasks(prev => {
       const updatedTasks = prev.map(t => {
@@ -257,7 +315,11 @@ const App: React.FC = () => {
             newTags.push(finishTag);
             newTags = newTags.filter(tag => tag !== 'Atrasada');
             grantXp(XP_PER_TASK[t.priority]);
-            triggerCelebration();
+          }
+
+          if (t.status === 'done' && updates.status !== 'done') {
+            newCompletedAt = undefined;
+            newTags = newTags.filter(tag => !tag.startsWith('Terminado em:'));
           }
 
           return { ...t, ...updates, tags: newTags, startedAt: newStartedAt, completedAt: newCompletedAt };
@@ -296,13 +358,23 @@ const App: React.FC = () => {
     const matchesSearch = t.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
                          t.description.toLowerCase().includes(searchQuery.toLowerCase());
     
+    // Determinar qual data usar para o filtro: data de conclusão para tarefas feitas, data de criação para as demais
+    const displayTimestamp = (t.status === 'done' && t.completedAt) ? t.completedAt : t.createdAt;
+    
+    const taskDate = new Date(displayTimestamp);
+    taskDate.setHours(0, 0, 0, 0);
+    
     if (selectedDate) {
-      const taskDate = new Date(t.createdAt);
       const filterDate = new Date(selectedDate);
-      return matchesSearch && 
-             taskDate.getDate() === filterDate.getDate() &&
-             taskDate.getMonth() === filterDate.getMonth() &&
-             taskDate.getFullYear() === filterDate.getFullYear();
+      filterDate.setHours(0, 0, 0, 0);
+      
+      const isSameDay = taskDate.getTime() === filterDate.getTime();
+      
+      // Se for o dia de hoje, mostrar também as tarefas atrasadas de dias anteriores (que ainda não foram concluídas)
+      const isToday = filterDate.getTime() === new Date().setHours(0, 0, 0, 0);
+      const isOverdue = t.status !== 'done' && taskDate.getTime() < filterDate.getTime();
+
+      return matchesSearch && (isSameDay || (isToday && isOverdue));
     }
     return matchesSearch;
   });
@@ -315,7 +387,6 @@ const App: React.FC = () => {
 
   return (
     <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans selection:bg-indigo-500/30 selection:text-indigo-600 dark:selection:text-indigo-200 overflow-hidden relative">
-      {showCelebration && <CelebrationEffect />}
       
       {isSidebarOpen && (
         <div 
@@ -324,7 +395,7 @@ const App: React.FC = () => {
         />
       )}
 
-      <div className={`fixed inset-y-0 left-0 z-50 transform transition-transform duration-300 md:relative md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      <div className={`fixed inset-y-0 left-0 z-50 transform transition-all duration-300 md:relative md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} ${!isDesktopSidebarOpen ? 'md:w-0 md:opacity-0 md:pointer-events-none' : 'md:w-80 md:opacity-100'}`}>
         <Sidebar 
           stats={stats} 
           tasks={tasks}
@@ -335,7 +406,15 @@ const App: React.FC = () => {
         />
       </div>
 
-      <main className="flex-1 flex flex-col h-screen overflow-hidden">
+      <main className="flex-1 flex flex-col h-screen overflow-hidden relative">
+        {/* Toggle Sidebar Desktop */}
+        <button 
+          onClick={() => setIsDesktopSidebarOpen(!isDesktopSidebarOpen)}
+          className={`hidden md:flex absolute left-4 top-1/2 -translate-y-1/2 z-[60] p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-full text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 shadow-2xl transition-all hover:scale-110 active:scale-95 ${!isDesktopSidebarOpen ? 'translate-x-0' : 'translate-x-[-20px]'}`}
+          title={isDesktopSidebarOpen ? "Esconder Painel" : "Mostrar Painel"}
+        >
+          {isDesktopSidebarOpen ? <ChevronLeft className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
+        </button>
         <div className="bg-white/80 dark:bg-slate-950/80 backdrop-blur-xl border-b border-slate-200 dark:border-slate-900 px-4 md:px-8 py-4 md:py-6 flex items-center justify-between z-40">
           <div className="flex items-center gap-3 md:gap-4 flex-1">
             <button 
@@ -445,6 +524,7 @@ const App: React.FC = () => {
                       onEdit={(t) => { setEditingTask(t); setIsModalOpen(true); }}
                       onDelete={(id) => setTasks(prev => prev.filter(t => t.id !== id))}
                       onView={(t) => setViewingTask(t)}
+                      onComplete={(id) => updateTask(id, { status: 'done' })}
                     />
                   ))}
                 {filteredTasks.filter(t => t.status === status).length === 0 && (

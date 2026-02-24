@@ -30,6 +30,7 @@ export interface UserStats {
   // Sistema de Streak (Placeholder)
   streak: number;
   lastActivityTimestamp?: number;
+  lastPenaltyTimestamp?: number;
   activeDays?: string[]; // Array de strings formatadas "YYYY-MM-DD" para o calendário
 }
 

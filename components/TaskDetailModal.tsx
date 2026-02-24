@@ -14,7 +14,16 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, onClose, onCanc
   const priority = PRIORITY_CONFIG[task.priority];
   const status = STATUS_CONFIG[task.status];
   const createdAtStr = new Date(task.createdAt).toLocaleString('pt-BR');
-  const isDelayed = task.tags.includes('Atrasada');
+  
+  const taskDate = new Date(task.createdAt);
+  taskDate.setHours(0, 0, 0, 0);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const diffTime = today.getTime() - taskDate.getTime();
+  const delayDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+  const isOverdue = task.status !== 'done' && delayDays > 0;
+
+  const isDelayed = task.tags.includes('Atrasada') || isOverdue;
   const isRecurring = task.recurrence && task.recurrence !== 'none';
 
   const getRecurrenceLabel = () => {
@@ -69,8 +78,8 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, onClose, onCanc
             </span>
             {isDelayed && (
               <span className="text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-full bg-rose-500 text-white border border-rose-400 flex items-center gap-2 animate-pulse shadow-lg shadow-rose-900/40">
-                <AlertTriangle className="w-4 h-4 fill-white/20" />
-                Tarefa Atrasada
+                {isOverdue ? '💣' : <AlertTriangle className="w-4 h-4 fill-white/20" />}
+                {isOverdue ? `${delayDays} ${delayDays === 1 ? 'dia' : 'dias'} de atraso` : 'Tarefa Atrasada'}
               </span>
             )}
             {isRecurring && (
