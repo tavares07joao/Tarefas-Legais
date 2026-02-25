@@ -12,6 +12,28 @@ const STORAGE_KEY_TASKS = 'gamified-task-master-tasks';
 const STORAGE_KEY_STATS = 'gamified-task-master-stats';
 const STORAGE_KEY_THEME = 'gamified-task-master-theme';
 
+const generateId = () => {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+};
+
+const getLocalDateString = (date: Date = new Date()) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const safeLocalStorageSet = (key: string, value: string) => {
+  try {
+    localStorage.setItem(key, value);
+  } catch (e) {
+    console.error(`Failed to save to localStorage for key "${key}":`, e);
+  }
+};
+
 const App: React.FC = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
@@ -146,7 +168,9 @@ const App: React.FC = () => {
       // Ctrl+F ou Cmd+F para focar na busca
       if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
         e.preventDefault();
-        searchInputRef.current?.focus();
+        if (searchInputRef.current) {
+          searchInputRef.current.focus();
+        }
       }
     };
 
@@ -155,7 +179,7 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY_THEME, theme);
+    safeLocalStorageSet(STORAGE_KEY_THEME, theme);
     if (theme === 'dark') {
       document.documentElement.classList.add('dark');
     } else {
@@ -163,16 +187,16 @@ const App: React.FC = () => {
     }
   }, [theme]);
 
-  useEffect(() => { localStorage.setItem(STORAGE_KEY_TASKS, JSON.stringify(tasks)); }, [tasks]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEY_STATS, JSON.stringify(stats)); }, [stats]);
+  useEffect(() => { safeLocalStorageSet(STORAGE_KEY_TASKS, JSON.stringify(tasks)); }, [tasks]);
+  useEffect(() => { safeLocalStorageSet(STORAGE_KEY_STATS, JSON.stringify(stats)); }, [stats]);
 
   const updateActivity = () => {
     const today = new Date();
-    const todayStr = today.toISOString().split('T')[0];
+    const todayStr = getLocalDateString();
     const now = Date.now();
     
     setStats(prev => {
-      const lastActivityDate = prev.lastActivityTimestamp ? new Date(prev.lastActivityTimestamp).toISOString().split('T')[0] : null;
+      const lastActivityDate = prev.lastActivityTimestamp ? getLocalDateString(new Date(prev.lastActivityTimestamp)) : null;
       
       let newStreak = prev.streak;
       const activeDays = prev.activeDays || [];
@@ -181,11 +205,11 @@ const App: React.FC = () => {
       if (!hasAlreadyActedToday) {
         const yesterday = new Date();
         yesterday.setDate(yesterday.getDate() - 1);
-        const yesterdayStr = yesterday.toISOString().split('T')[0];
+        const yesterdayStr = getLocalDateString(yesterday);
         
         const dayBeforeYesterday = new Date();
         dayBeforeYesterday.setDate(dayBeforeYesterday.getDate() - 2);
-        const dayBeforeYesterdayStr = dayBeforeYesterday.toISOString().split('T')[0];
+        const dayBeforeYesterdayStr = getLocalDateString(dayBeforeYesterday);
 
         if (lastActivityDate === yesterdayStr) {
           newStreak += 1;
@@ -247,7 +271,8 @@ const App: React.FC = () => {
         ...prev,
         level: newLevel,
         xp: newXp,
-        totalXp: Math.max(0, prev.totalXp - amount)
+        // totalXp mantido como registro vitalício, não sofre penalidade
+        totalXp: prev.totalXp
       };
     });
   };
@@ -267,7 +292,7 @@ const App: React.FC = () => {
     }
 
     const newTask: Task = {
-      id: Math.random().toString(36).substr(2, 9),
+      id: generateId(),
       title: data.title || 'Sem título',
       description: data.description || '',
       status: 'todo',
@@ -315,6 +340,31 @@ const App: React.FC = () => {
             newTags.push(finishTag);
             newTags = newTags.filter(tag => tag !== 'Atrasada');
             grantXp(XP_PER_TASK[t.priority]);
+
+            // Lógica de Recorrência: Criar próxima instância
+            if (t.recurrence && t.recurrence !== 'none') {
+              const nextDate = new Date(t.createdAt);
+              if (t.recurrence === 'daily') nextDate.setDate(nextDate.getDate() + 1);
+              else if (t.recurrence === 'weekly') nextDate.setDate(nextDate.getDate() + 7);
+              else if (t.recurrence === 'monthly') nextDate.setMonth(nextDate.getMonth() + 1);
+
+              const shouldCreateNext = !t.recurrenceEndDate || nextDate.getTime() <= t.recurrenceEndDate;
+              
+              if (shouldCreateNext) {
+                setTimeout(() => {
+                  const nextTask: Task = {
+                    ...t,
+                    id: generateId(),
+                    status: 'todo',
+                    createdAt: nextDate.getTime(),
+                    startedAt: undefined,
+                    completedAt: undefined,
+                    tags: []
+                  };
+                  setTasks(currentTasks => [...currentTasks, nextTask]);
+                }, 500);
+              }
+            }
           }
 
           if (t.status === 'done' && updates.status !== 'done') {

@@ -29,6 +29,8 @@ const Sidebar: React.FC<SidebarProps> = ({ stats, tasks, selectedDate, onDateSel
   const [duration, setDuration] = useState(10);
   const [timeLeft, setTimeLeft] = useState(duration * 60);
   const [isActive, setIsActive] = useState(false);
+  const startTimeRef = useRef<number | null>(null);
+  const durationAtStartRef = useRef<number>(duration * 60);
   const [isMuted, setIsMuted] = useState(false);
   const [volume, setVolume] = useState(50);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
@@ -57,7 +59,11 @@ const Sidebar: React.FC<SidebarProps> = ({ stats, tasks, selectedDate, onDateSel
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('gamified-task-master-custom-tracks', JSON.stringify(customTracks));
+    try {
+      localStorage.setItem('gamified-task-master-custom-tracks', JSON.stringify(customTracks));
+    } catch (e) {
+      console.error("Erro ao salvar trilhas customizadas", e);
+    }
   }, [customTracks]);
 
   useEffect(() => {
@@ -104,22 +110,35 @@ const Sidebar: React.FC<SidebarProps> = ({ stats, tasks, selectedDate, onDateSel
 
   useEffect(() => {
     if (isActive && timeLeft > 0) {
-      timerRef.current = window.setInterval(() => setTimeLeft(prev => prev - 1), 1000);
-      
-      // Trocar música a cada 10 minutos (600 segundos)
-      if (timeLeft > 0 && timeLeft % 600 === 0 && timeLeft !== duration * 60) {
-        setCurrentTrackIndex(prev => (prev + 1) % allTracks.length);
+      if (!startTimeRef.current) {
+        startTimeRef.current = Date.now();
+        durationAtStartRef.current = timeLeft;
       }
-    } else if (timeLeft === 0) {
-      setIsActive(false);
-      setIsAudioPlaying(false);
-      onFocusComplete();
-      resetTimer();
+
+      timerRef.current = window.setInterval(() => {
+        const elapsedSeconds = Math.floor((Date.now() - (startTimeRef.current || Date.now())) / 1000);
+        const newTimeLeft = Math.max(0, durationAtStartRef.current - elapsedSeconds);
+        
+        setTimeLeft(newTimeLeft);
+
+        // Trocar música a cada 10 minutos (600 segundos)
+        if (newTimeLeft > 0 && newTimeLeft % 600 === 0 && newTimeLeft !== duration * 60) {
+          setCurrentTrackIndex(prev => (prev + 1) % allTracks.length);
+        }
+
+        if (newTimeLeft === 0) {
+          setIsActive(false);
+          setIsAudioPlaying(false);
+          onFocusComplete();
+          resetTimer();
+        }
+      }, 1000);
     } else {
       if (timerRef.current) window.clearInterval(timerRef.current);
+      startTimeRef.current = null;
     }
     return () => { if (timerRef.current) window.clearInterval(timerRef.current); };
-  }, [isActive, timeLeft]);
+  }, [isActive]);
 
   // Atalho de teclado: Barra de Espaço para Play/Pause
   useEffect(() => {
