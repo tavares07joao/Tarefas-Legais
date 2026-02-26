@@ -14,7 +14,7 @@ interface TaskCardProps {
   onComplete?: (taskId: string) => void;
 }
 
-const TaskCard: React.FC<TaskCardProps> = ({ task, onDragStart, onDragEnd, onEdit, onDelete, onView, onComplete }) => {
+const TaskCard: React.FC<TaskCardProps> = React.memo(({ task, onDragStart, onDragEnd, onEdit, onDelete, onView, onComplete }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [showLocalConfetti, setShowLocalConfetti] = useState(false);
 
@@ -200,6 +200,6 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onDragStart, onDragEnd, onEdi
       </div>
     </div>
   );
-};
+});
 
 export default TaskCard;

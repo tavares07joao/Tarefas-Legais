@@ -5,8 +5,9 @@ import {
   ChevronUp, ChevronDown,
   ChevronLeft, ChevronRight,
   Volume2, VolumeX, Volume1,
-  Play, Pause, Settings, Flame, X, Music, Plus, Link as LinkIcon, Trash2
+  Play, Pause, Settings, Flame, X, Music, Plus, Link as LinkIcon, Trash2, Repeat, CalendarClock
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import { UserStats, Task, MusicTrack } from '../types';
 import { NEXT_LEVEL_XP_BASE, FOCUS_TRACKS } from '../constants';
 import MusicEmbed from './MusicEmbed';
@@ -18,12 +19,35 @@ interface SidebarProps {
   onDateSelect: (timestamp: number | null) => void;
   onFocusComplete: () => void;
   onEditProfile?: () => void;
+  onShowScheduled?: () => void;
   onCloseMobile?: () => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ stats, tasks, selectedDate, onDateSelect, onFocusComplete, onEditProfile, onCloseMobile }) => {
+const Sidebar: React.FC<SidebarProps> = React.memo(({ stats, tasks, selectedDate, onDateSelect, onFocusComplete, onEditProfile, onShowScheduled, onCloseMobile }) => {
   const xpNeeded = stats.level * NEXT_LEVEL_XP_BASE;
   const progressPercent = Math.min(100, (stats.xp / xpNeeded) * 100);
+
+  const [xpGains, setXpGains] = useState<{id: number, amount: number}[]>([]);
+  const prevXpRef = useRef(stats.xp);
+  const prevLevelRef = useRef(stats.level);
+
+  useEffect(() => {
+    if (stats.xp > prevXpRef.current || stats.level > prevLevelRef.current) {
+      const gain = stats.level > prevLevelRef.current 
+        ? (prevLevelRef.current * NEXT_LEVEL_XP_BASE - prevXpRef.current) + stats.xp
+        : stats.xp - prevXpRef.current;
+      
+      if (gain > 0) {
+        const id = Date.now();
+        setXpGains(prev => [...prev, { id, amount: gain }]);
+        setTimeout(() => {
+          setXpGains(prev => prev.filter(g => g.id !== id));
+        }, 2000);
+      }
+    }
+    prevXpRef.current = stats.xp;
+    prevLevelRef.current = stats.level;
+  }, [stats.xp, stats.level]);
 
   // --- Lógica de Foco ---
   const [duration, setDuration] = useState(10);
@@ -296,13 +320,29 @@ const Sidebar: React.FC<SidebarProps> = ({ stats, tasks, selectedDate, onDateSel
             </div>
           </div>
 
-          <div className="space-y-2.5">
+          <div className="space-y-2.5 relative">
             <div className="flex justify-between text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">
               <span>Progresso de Nível</span>
-              <span className="text-indigo-600 dark:text-indigo-400">{stats.xp}/{xpNeeded} XP</span>
+              <div className="flex items-center gap-2 relative">
+                <AnimatePresence>
+                  {xpGains.map(gain => (
+                    <motion.span
+                      key={gain.id}
+                      initial={{ opacity: 0, y: 0, scale: 0.5 }}
+                      animate={{ opacity: 1, y: -20, scale: 1.2 }}
+                      exit={{ opacity: 0 }}
+                      className="absolute right-0 text-emerald-500 font-black"
+                    >
+                      +{gain.amount}
+                    </motion.span>
+                  ))}
+                </AnimatePresence>
+                <span className="text-indigo-600 dark:text-indigo-400">{stats.xp}/{xpNeeded} XP</span>
+              </div>
             </div>
             <div className="h-3 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden border border-slate-200 dark:border-slate-700 p-[2px]">
-              <div 
+              <motion.div 
+                animate={{ scale: xpGains.length > 0 ? [1, 1.02, 1] : 1 }}
                 className="h-full bg-gradient-to-r from-indigo-500 via-violet-500 to-indigo-500 bg-[length:200%_100%] animate-[shimmer_2s_infinite_linear] rounded-full transition-all duration-700 shadow-[0_0_15px_rgba(99,102,241,0.3)]"
                 style={{ width: `${progressPercent}%` }}
               />
@@ -537,6 +577,6 @@ const Sidebar: React.FC<SidebarProps> = ({ stats, tasks, selectedDate, onDateSel
       </div>
     </aside>
   );
-};
+});
 
 export default Sidebar;

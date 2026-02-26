@@ -1,5 +1,5 @@
 {
-  "name": "Tarefas V2",
+  "name": "Organizador de tarefas",
   "description": "Um gerenciador de tarefas Kanban gamificado com sistema de nível, experiência e um widget de foco configurável com animações",
   "requestFramePermissions": []
 }

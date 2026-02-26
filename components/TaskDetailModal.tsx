@@ -8,9 +8,10 @@ interface TaskDetailModalProps {
   task: Task;
   onClose: () => void;
   onCancelRecurrence?: (taskId: string) => void;
+  onDelete?: (taskId: string) => void;
 }
 
-const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, onClose, onCancelRecurrence }) => {
+const TaskDetailModal: React.FC<TaskDetailModalProps> = React.memo(({ task, onClose, onCancelRecurrence, onDelete }) => {
   const priority = PRIORITY_CONFIG[task.priority];
   const status = STATUS_CONFIG[task.status];
   const createdAtStr = new Date(task.createdAt).toLocaleString('pt-BR');
@@ -176,7 +177,14 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, onClose, onCanc
         </div>
 
         {/* Footer Action */}
-        <div className="px-10 py-6 border-t border-slate-800 bg-slate-950/30 flex justify-end">
+        <div className="px-10 py-6 border-t border-slate-800 bg-slate-950/30 flex justify-between items-center">
+          <button 
+            onClick={() => onDelete?.(task.id)}
+            className="flex items-center gap-2 px-6 py-3 bg-red-900/20 text-red-400 font-black rounded-2xl hover:bg-red-900/40 transition-all uppercase tracking-widest text-[10px] border border-red-900/30"
+          >
+            <Trash className="w-4 h-4" />
+            Excluir Jornada
+          </button>
           <button 
             onClick={onClose}
             className="px-8 py-3 bg-slate-800 text-slate-300 font-black rounded-2xl hover:bg-slate-700 transition-all uppercase tracking-widest text-[10px] border border-slate-700"
@@ -187,6 +195,6 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, onClose, onCanc
       </div>
     </div>
   );
-};
+});
 
 export default TaskDetailModal;

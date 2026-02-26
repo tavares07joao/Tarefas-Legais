@@ -11,7 +11,7 @@ interface ProfileModalProps {
   onSave: (data: Partial<UserStats>) => void;
 }
 
-const ProfileModal: React.FC<ProfileModalProps> = ({ stats, theme, onThemeChange, onClose, onSave }) => {
+const ProfileModal: React.FC<ProfileModalProps> = React.memo(({ stats, theme, onThemeChange, onClose, onSave }) => {
   const [name, setName] = useState(stats.name || 'Usuário');
   const [avatarUrl, setAvatarUrl] = useState(stats.avatarUrl || 'https://api.dicebear.com/7.x/initials/svg?seed=U&backgroundColor=cbd5e1&fontSize=40');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -130,6 +130,6 @@ const ProfileModal: React.FC<ProfileModalProps> = ({ stats, theme, onThemeChange
       </div>
     </div>
   );
-};
+});
 
 export default ProfileModal;

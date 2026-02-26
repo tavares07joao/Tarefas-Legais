@@ -1,8 +1,9 @@
 
-import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Search, Filter, X, Calendar as CalendarIcon, Repeat, CheckCircle, Flame, CalendarClock, Menu, ChevronLeft, ChevronRight } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { Plus, Search, Filter, X, Calendar as CalendarIcon, Repeat, CheckCircle, Flame, CalendarClock, Menu, ChevronLeft, ChevronRight, Trash2, AlertCircle } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import { Task, UserStats, TaskStatus, Priority, RecurrenceType } from './types';
-import { STATUS_CONFIG, XP_PER_TASK, NEXT_LEVEL_XP_BASE } from './constants';
+import { STATUS_CONFIG, XP_PER_TASK, NEXT_LEVEL_XP_BASE, PRIORITY_CONFIG } from './constants';
 import Sidebar from './components/Sidebar';
 import TaskCard from './components/TaskCard';
 import TaskDetailModal from './components/TaskDetailModal';
@@ -48,6 +49,12 @@ const App: React.FC = () => {
   });
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [isScheduledModalOpen, setIsScheduledModalOpen] = useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [taskToDelete, setTaskToDelete] = useState<string | null>(null);
+  const [notifications, setNotifications] = useState<{id: string, type: 'xp' | 'info', message: string, amount?: number}[]>([]);
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [isScheduledHovered, setIsScheduledHovered] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [viewingTask, setViewingTask] = useState<Task | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -190,7 +197,7 @@ const App: React.FC = () => {
   useEffect(() => { safeLocalStorageSet(STORAGE_KEY_TASKS, JSON.stringify(tasks)); }, [tasks]);
   useEffect(() => { safeLocalStorageSet(STORAGE_KEY_STATS, JSON.stringify(stats)); }, [stats]);
 
-  const updateActivity = () => {
+  const updateActivity = useCallback(() => {
     const today = new Date();
     const todayStr = getLocalDateString();
     const now = Date.now();
@@ -227,13 +234,21 @@ const App: React.FC = () => {
         activeDays: hasAlreadyActedToday ? activeDays : [...activeDays, todayStr]
       };
     });
-  };
+  }, []);
 
-  const grantXp = (amount: number, isTask: boolean = true) => {
-    const multiplier = 1 + (stats.streak * 0.005);
-    const bonusAmount = Math.round(amount * multiplier);
+  const addNotification = useCallback((type: 'xp' | 'info', message: string, amount?: number) => {
+    const id = generateId();
+    setNotifications(prev => [...prev, { id, type, message, amount }]);
+    setTimeout(() => {
+      setNotifications(prev => prev.filter(n => n.id !== id));
+    }, 3000);
+  }, []);
 
+  const grantXp = useCallback((amount: number, isTask: boolean = true) => {
     setStats(prev => {
+      const multiplier = 1 + (prev.streak * 0.005);
+      const bonusAmount = Math.round(amount * multiplier);
+      
       let newXp = prev.xp + bonusAmount;
       let newLevel = prev.level;
       let xpNeeded = newLevel * NEXT_LEVEL_XP_BASE;
@@ -252,9 +267,9 @@ const App: React.FC = () => {
     });
     
     updateActivity();
-  };
+  }, [updateActivity]);
 
-  const applyPenalty = (amount: number) => {
+  const applyPenalty = useCallback((amount: number) => {
     setStats(prev => {
       let newXp = prev.xp - amount;
       let newLevel = prev.level;
@@ -275,7 +290,7 @@ const App: React.FC = () => {
         totalXp: prev.totalXp
       };
     });
-  };
+  }, []);
 
   const updateProfile = (data: Partial<UserStats>) => {
     setStats(prev => ({ ...prev, ...data }));
@@ -305,6 +320,7 @@ const App: React.FC = () => {
     };
     setTasks([...tasks, newTask]);
     setIsModalOpen(false);
+    addNotification('info', `Tarefa lançada: ${newTask.title}`);
     
     const todayStr = new Date().toISOString().split('T')[0];
     const taskDayStr = new Date(taskTimestamp).toISOString().split('T')[0];
@@ -317,7 +333,19 @@ const App: React.FC = () => {
     return new Date(timestamp).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
   };
 
-  const updateTask = (id: string, updates: Partial<Task>) => {
+  const updateTask = useCallback((id: string, updates: Partial<Task>) => {
+    const taskToUpdate = tasks.find(t => t.id === id);
+    if (updates.status === 'done' && taskToUpdate) {
+      const now = new Date();
+      const taskDate = new Date(taskToUpdate.createdAt);
+      
+      // Bloqueio de conclusão futura
+      if (taskDate.getTime() > now.getTime() && taskDate.toDateString() !== now.toDateString()) {
+        addNotification('info', 'Você não pode concluir jornadas do futuro!');
+        return;
+      }
+    }
+
     setTasks(prev => {
       const updatedTasks = prev.map(t => {
         if (t.id === id) {
@@ -344,9 +372,37 @@ const App: React.FC = () => {
             // Lógica de Recorrência: Criar próxima instância
             if (t.recurrence && t.recurrence !== 'none') {
               const nextDate = new Date(t.createdAt);
-              if (t.recurrence === 'daily') nextDate.setDate(nextDate.getDate() + 1);
-              else if (t.recurrence === 'weekly') nextDate.setDate(nextDate.getDate() + 7);
-              else if (t.recurrence === 'monthly') nextDate.setMonth(nextDate.getMonth() + 1);
+              
+              if (t.recurrence === 'daily') {
+                nextDate.setDate(nextDate.getDate() + 1);
+              } else if (t.recurrence === 'weekly') {
+                if (t.recurrenceDays && t.recurrenceDays.length > 0) {
+                  // Encontrar o próximo dia da semana na lista
+                  const currentDay = nextDate.getDay();
+                  const sortedDays = [...t.recurrenceDays].sort((a, b) => a - b);
+                  const nextDay = sortedDays.find(d => d > currentDay) ?? sortedDays[0];
+                  
+                  const daysToAdd = nextDay > currentDay ? nextDay - currentDay : 7 - (currentDay - nextDay);
+                  nextDate.setDate(nextDate.getDate() + daysToAdd);
+                } else {
+                  nextDate.setDate(nextDate.getDate() + 7);
+                }
+              } else if (t.recurrence === 'monthly') {
+                if (t.recurrenceDays && t.recurrenceDays.length > 0) {
+                  const currentDayOfMonth = nextDate.getDate();
+                  const sortedDays = [...t.recurrenceDays].sort((a, b) => a - b);
+                  const nextDayOfMonth = sortedDays.find(d => d > currentDayOfMonth);
+                  
+                  if (nextDayOfMonth) {
+                    nextDate.setDate(nextDayOfMonth);
+                  } else {
+                    nextDate.setMonth(nextDate.getMonth() + 1);
+                    nextDate.setDate(sortedDays[0]);
+                  }
+                } else {
+                  nextDate.setMonth(nextDate.getMonth() + 1);
+                }
+              }
 
               const shouldCreateNext = !t.recurrenceEndDate || nextDate.getTime() <= t.recurrenceEndDate;
               
@@ -356,12 +412,19 @@ const App: React.FC = () => {
                     ...t,
                     id: generateId(),
                     status: 'todo',
-                    createdAt: nextDate.getTime(),
+                    createdAt: nextDate.getTime(), // Âncora na data nominal
                     startedAt: undefined,
                     completedAt: undefined,
                     tags: []
                   };
-                  setTasks(currentTasks => [...currentTasks, nextTask]);
+                  setTasks(currentTasks => {
+                    // Evitar duplicatas se o usuário clicar rápido ou houver lag
+                    if (currentTasks.some(ct => ct.title === nextTask.title && ct.createdAt === nextTask.createdAt && ct.status === 'todo')) {
+                      return currentTasks;
+                    }
+                    addNotification('info', `Nova jornada: ${nextTask.title}`);
+                    return [...currentTasks, nextTask];
+                  });
                 }, 500);
               }
             }
@@ -380,54 +443,110 @@ const App: React.FC = () => {
     });
     setEditingTask(null);
     setIsModalOpen(false);
-  };
+  }, [grantXp, updateActivity]);
 
-  const cancelRecurrence = (taskId: string) => {
+  const cancelRecurrence = useCallback((taskId: string) => {
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, recurrence: 'none' as RecurrenceType } : t));
     if (viewingTask?.id === taskId) {
       setViewingTask(prev => prev ? { ...prev, recurrence: 'none' as RecurrenceType } : null);
     }
-  };
+  }, [viewingTask?.id]);
 
-  const onDragStart = (e: React.DragEvent, taskId: string) => {
+  const deleteTask = useCallback((id: string) => {
+    setTaskToDelete(id);
+    setIsDeleteConfirmOpen(true);
+  }, []);
+
+  const confirmDelete = useCallback(() => {
+    if (taskToDelete) {
+      setTasks(prev => prev.filter(t => t.id !== taskToDelete));
+      setTaskToDelete(null);
+      setIsDeleteConfirmOpen(false);
+      setViewingTask(null);
+    }
+  }, [taskToDelete]);
+
+  const onDragStart = useCallback((e: React.DragEvent, taskId: string) => {
     e.dataTransfer.setData('taskId', taskId);
     setIsDraggingGlobal(true);
-  };
+  }, []);
 
-  const onDragEnd = () => {
+  const onDragEnd = useCallback(() => {
     setIsDraggingGlobal(false);
-  };
+  }, []);
 
-  const onDrop = (e: React.DragEvent, status: TaskStatus) => {
+  const onDrop = useCallback((e: React.DragEvent, status: TaskStatus) => {
     const taskId = e.dataTransfer.getData('taskId');
     updateTask(taskId, { status });
     setIsDraggingGlobal(false);
-  };
+  }, [updateTask]);
 
-  const filteredTasks = tasks.filter(t => {
-    const matchesSearch = t.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                         t.description.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    // Determinar qual data usar para o filtro: data de conclusão para tarefas feitas, data de criação para as demais
-    const displayTimestamp = (t.status === 'done' && t.completedAt) ? t.completedAt : t.createdAt;
-    
-    const taskDate = new Date(displayTimestamp);
-    taskDate.setHours(0, 0, 0, 0);
-    
-    if (selectedDate) {
+  const filteredTasks = useMemo(() => {
+    return tasks.filter(t => {
+      const matchesSearch = t.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                           t.description.toLowerCase().includes(searchQuery.toLowerCase());
+      
+      if (!matchesSearch) return false;
+
+      // Se não houver data selecionada, mostra tudo que a busca filtrar
+      if (!selectedDate) return true;
+
       const filterDate = new Date(selectedDate);
       filterDate.setHours(0, 0, 0, 0);
-      
-      const isSameDay = taskDate.getTime() === filterDate.getTime();
-      
-      // Se for o dia de hoje, mostrar também as tarefas atrasadas de dias anteriores (que ainda não foram concluídas)
-      const isToday = filterDate.getTime() === new Date().setHours(0, 0, 0, 0);
-      const isOverdue = t.status !== 'done' && taskDate.getTime() < filterDate.getTime();
+      const filterTimestamp = filterDate.getTime();
 
-      return matchesSearch && (isSameDay || (isToday && isOverdue));
-    }
-    return matchesSearch;
-  });
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayTimestamp = today.getTime();
+
+      // Determinar qual data usar para o filtro: data de conclusão para tarefas feitas, data de criação para as demais
+      const displayTimestamp = (t.status === 'done' && t.completedAt) ? t.completedAt : t.createdAt;
+      const taskDate = new Date(displayTimestamp);
+      taskDate.setHours(0, 0, 0, 0);
+      const taskTimestamp = taskDate.getTime();
+
+      // 1. Caso base: Mesma data
+      if (taskTimestamp === filterTimestamp) return true;
+
+      // 2. Tarefas atrasadas (apenas se estivermos vendo "Hoje")
+      if (filterTimestamp === todayTimestamp && t.status !== 'done' && taskTimestamp < todayTimestamp) {
+        return true;
+      }
+
+      // 3. Agendamento Futuro / Recorrência
+      // Se a tarefa é recorrente e a data selecionada é futura (ou hoje) em relação à criação
+      const creationDate = new Date(t.createdAt);
+      creationDate.setHours(0, 0, 0, 0);
+      const creationTimestamp = creationDate.getTime();
+
+      if (t.recurrence !== 'none' && filterTimestamp >= creationTimestamp) {
+        // Verificar se está dentro do prazo final
+        if (t.recurrenceEndDate && filterTimestamp > t.recurrenceEndDate) return false;
+
+        // Se a tarefa já foi concluída, ela não deve aparecer como "recorrente" em dias futuros
+        // a menos que seja uma nova instância. Mas como o sistema cria novas instâncias,
+        // a instância concluída só deve aparecer no dia que foi concluída.
+        if (t.status === 'done') return false;
+
+        // Verificar padrão
+        if (t.recurrence === 'daily') return true;
+        
+        if (t.recurrence === 'weekly' && t.recurrenceDays && t.recurrenceDays.length > 0) {
+          return t.recurrenceDays.includes(filterDate.getDay());
+        }
+        
+        if (t.recurrence === 'monthly' && t.recurrenceDays && t.recurrenceDays.length > 0) {
+          return t.recurrenceDays.includes(filterDate.getDate());
+        }
+
+        // Se for semanal/mensal mas não tiver dias específicos, assume o dia da criação
+        if (t.recurrence === 'weekly' && filterDate.getDay() === creationDate.getDay()) return true;
+        if (t.recurrence === 'monthly' && filterDate.getDate() === creationDate.getDate()) return true;
+      }
+
+      return false;
+    });
+  }, [tasks, searchQuery, selectedDate]);
 
   const selectedDateLabel = selectedDate ? new Date(selectedDate).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' }) : null;
 
@@ -453,6 +572,7 @@ const App: React.FC = () => {
           onDateSelect={setSelectedDate}
           onFocusComplete={() => grantXp(20, false)} 
           onEditProfile={() => setIsProfileModalOpen(true)}
+          onShowScheduled={() => setIsScheduledModalOpen(true)}
         />
       </div>
 
@@ -474,17 +594,61 @@ const App: React.FC = () => {
               <Menu className="w-5 h-5" />
             </button>
             
-            <div className="relative flex-1 md:max-w-96 group">
-              <Search className="absolute left-3 md:left-4 top-1/2 -translate-y-1/2 w-3.5 h-3.5 md:w-4 h-4 text-slate-400 dark:text-slate-600 group-focus-within:text-indigo-500 transition-colors" />
-              <input 
+            <motion.div 
+              className="relative flex items-center"
+            >
+              <Search className="absolute left-3 md:left-4 top-1/2 -translate-y-1/2 w-3.5 h-3.5 md:w-4 h-4 text-slate-400 dark:text-slate-600 pointer-events-none z-10" />
+              <motion.input 
                 ref={searchInputRef}
                 type="text" 
-                placeholder="Buscar tarefa (Ctrl+F)..." 
+                placeholder="Buscar..." 
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 md:pl-12 pr-4 py-2 md:py-3 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl md:rounded-2xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/50 transition-all text-xs md:text-sm outline-none font-medium placeholder:text-slate-400 dark:placeholder:text-slate-600"
+                onFocus={() => setIsSearchFocused(true)}
+                onBlur={() => setIsSearchFocused(false)}
+                animate={{ 
+                  width: isSearchFocused ? 320 : 48,
+                  backgroundColor: isSearchFocused ? 'var(--color-slate-50)' : 'var(--color-slate-100)'
+                }}
+                whileHover={!isSearchFocused ? { width: 180 } : {}}
+                transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                className="pl-9 md:pl-12 pr-4 py-2 md:py-3 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl md:rounded-2xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/50 text-xs md:text-sm outline-none font-medium placeholder:text-slate-400 dark:placeholder:text-slate-600 overflow-hidden"
               />
-            </div>
+            </motion.div>
+
+            <motion.button
+              onClick={() => setIsScheduledModalOpen(true)}
+              onMouseEnter={() => setIsScheduledHovered(true)}
+              onMouseLeave={() => setIsScheduledHovered(false)}
+              className="flex items-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl md:rounded-2xl text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors group overflow-hidden h-[38px] md:h-[46px]"
+              animate={{ 
+                width: isScheduledHovered ? 'auto' : 48,
+                paddingLeft: isScheduledHovered ? 16 : 12,
+                paddingRight: isScheduledHovered ? 16 : 12,
+              }}
+              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+            >
+              <div className="relative flex-shrink-0 flex items-center justify-center">
+                <Repeat className="w-5 h-5" />
+                {tasks.filter(t => t.recurrence && t.recurrence !== 'none').length > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 bg-indigo-600 text-white text-[8px] font-black w-4 h-4 rounded-full flex items-center justify-center border-2 border-white dark:border-slate-900">
+                    {tasks.filter(t => t.recurrence && t.recurrence !== 'none').length}
+                  </span>
+                )}
+              </div>
+              <AnimatePresence>
+                {isScheduledHovered && (
+                  <motion.span 
+                    initial={{ opacity: 0, width: 0, marginLeft: 0 }}
+                    animate={{ opacity: 1, width: 'auto', marginLeft: 8 }}
+                    exit={{ opacity: 0, width: 0, marginLeft: 0 }}
+                    className="text-[10px] font-black uppercase tracking-widest whitespace-nowrap"
+                  >
+                    Agendadas
+                  </motion.span>
+                )}
+              </AnimatePresence>
+            </motion.button>
           </div>
           
           <div className="hidden md:flex items-center gap-6 ml-4">
@@ -572,7 +736,7 @@ const App: React.FC = () => {
                       onDragStart={onDragStart} 
                       onDragEnd={onDragEnd}
                       onEdit={(t) => { setEditingTask(t); setIsModalOpen(true); }}
-                      onDelete={(id) => setTasks(prev => prev.filter(t => t.id !== id))}
+                      onDelete={deleteTask}
                       onView={(t) => setViewingTask(t)}
                       onComplete={(id) => updateTask(id, { status: 'done' })}
                     />
@@ -610,6 +774,7 @@ const App: React.FC = () => {
           task={viewingTask} 
           onClose={() => setViewingTask(null)} 
           onCancelRecurrence={cancelRecurrence}
+          onDelete={deleteTask}
         />
       )}
 
@@ -622,9 +787,144 @@ const App: React.FC = () => {
           onSave={updateProfile}
         />
       )}
+
+      {isScheduledModalOpen && (
+        <ScheduledTasksModal 
+          tasks={tasks}
+          onClose={() => setIsScheduledModalOpen(false)}
+          onViewTask={(task) => {
+            setIsScheduledModalOpen(false);
+            setViewingTask(task);
+          }}
+        />
+      )}
+
+      {isDeleteConfirmOpen && (
+        <DeleteConfirmModal 
+          onConfirm={confirmDelete}
+          onCancel={() => {
+            setIsDeleteConfirmOpen(false);
+            setTaskToDelete(null);
+          }}
+        />
+      )}
+
+      <div className="fixed bottom-6 right-6 z-[200] flex flex-col gap-3 pointer-events-none">
+        <AnimatePresence>
+          {notifications.map(n => (
+            <motion.div 
+              key={n.id}
+              initial={{ opacity: 0, x: 50, scale: 0.8 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: 20, scale: 0.8 }}
+              className={`px-6 py-4 rounded-2xl shadow-2xl border flex items-center gap-3 pointer-events-auto
+                ${n.type === 'xp' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100'}`}
+            >
+              {n.type === 'xp' ? (
+                <div className="p-1.5 bg-white/20 rounded-lg">
+                  <Flame className="w-4 h-4 text-white fill-white" />
+                </div>
+              ) : (
+                <div className="p-1.5 bg-indigo-100 dark:bg-indigo-900/40 rounded-lg">
+                  <Repeat className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                </div>
+              )}
+              <span className="text-xs font-black uppercase tracking-widest">{n.message}</span>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
     </div>
   );
 };
+
+const DeleteConfirmModal: React.FC<{onConfirm: () => void, onCancel: () => void}> = ({ onConfirm, onCancel }) => {
+  return (
+    <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-[250] flex items-center justify-center p-4">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.9, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        className="bg-white dark:bg-slate-900 rounded-[2.5rem] w-full max-w-sm shadow-2xl border border-slate-200 dark:border-slate-800 p-8 flex flex-col items-center text-center"
+      >
+        <div className="w-20 h-20 bg-red-100 dark:bg-red-900/30 rounded-3xl flex items-center justify-center text-red-600 dark:text-red-400 mb-6">
+          <Trash2 className="w-10 h-10" />
+        </div>
+        <h2 className="text-xl font-black text-slate-800 dark:text-slate-100 uppercase tracking-tight mb-2">Excluir Tarefa?</h2>
+        <p className="text-sm text-slate-500 dark:text-slate-400 font-medium mb-8">Esta ação não pode ser desfeita. Todo o progresso desta jornada será perdido.</p>
+        
+        <div className="grid grid-cols-2 gap-4 w-full">
+          <button 
+            onClick={onCancel}
+            className="py-4 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-black rounded-2xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-all uppercase tracking-widest text-[10px]"
+          >
+            Cancelar
+          </button>
+          <button 
+            onClick={onConfirm}
+            className="py-4 bg-red-600 text-white font-black rounded-2xl hover:bg-red-500 transition-all uppercase tracking-widest text-[10px] shadow-lg shadow-red-500/20"
+          >
+            Excluir
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
+const ScheduledTasksModal = React.memo<{tasks: Task[], onClose: () => void, onViewTask: (task: Task) => void}>(({ tasks, onClose, onViewTask }) => {
+  const scheduledTasks = tasks.filter(t => t.recurrence && t.recurrence !== 'none');
+
+  return (
+    <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-[120] flex items-center justify-center p-4 animate-in fade-in duration-300">
+      <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] w-full max-w-2xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col max-h-[80vh] overflow-hidden">
+        <div className="px-8 py-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-950/30">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-indigo-100 dark:bg-indigo-900/40 rounded-xl text-indigo-600 dark:text-indigo-400">
+              <Repeat className="w-5 h-5" />
+            </div>
+            <h2 className="text-lg font-black text-slate-800 dark:text-slate-100 uppercase tracking-tight">Tarefas Agendadas</h2>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-full transition-colors text-slate-400">
+            <X className="w-6 h-6" />
+          </button>
+        </div>
+
+        <div className="p-6 overflow-y-auto custom-scrollbar flex-1">
+          {scheduledTasks.length === 0 ? (
+            <div className="py-20 flex flex-col items-center justify-center opacity-30">
+              <CalendarClock className="w-16 h-16 mb-4" />
+              <p className="font-black uppercase tracking-widest text-xs">Nenhuma tarefa cíclica</p>
+            </div>
+          ) : (
+            <div className="grid gap-4">
+              {scheduledTasks.map(task => (
+                <div 
+                  key={task.id}
+                  onClick={() => onViewTask(task)}
+                  className="p-5 bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800 rounded-2xl hover:border-indigo-500/50 transition-all cursor-pointer group"
+                >
+                  <div className="flex justify-between items-start mb-2">
+                    <h3 className="font-black text-slate-800 dark:text-slate-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">{task.title}</h3>
+                    <span className="text-[9px] font-black uppercase tracking-widest px-2 py-1 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 rounded-lg">
+                      {task.recurrence === 'daily' ? 'Diária' : task.recurrence === 'weekly' ? 'Semanal' : 'Mensal'}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 line-clamp-1 mb-3">{task.description || 'Sem descrição'}</p>
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-1 text-[9px] font-bold text-slate-400 uppercase tracking-wider">
+                      <CalendarIcon className="w-3 h-3" />
+                      Criada em {new Date(task.createdAt).toLocaleDateString('pt-BR')}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+});
 
 const TaskModal: React.FC<{task: any, onClose: any, onSave: any}> = ({ task, onClose, onSave }) => {
   const [title, setTitle] = useState(task?.title || '');
