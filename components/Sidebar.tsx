@@ -285,7 +285,7 @@ const Sidebar: React.FC<SidebarProps> = React.memo(({ stats, tasks, selectedDate
   };
 
   return (
-    <aside className="w-80 bg-slate-50 dark:bg-slate-950 h-screen flex flex-col overflow-y-auto custom-scrollbar sticky top-0 z-20 transition-colors duration-300 border-r border-slate-200 dark:border-slate-800">
+    <aside className="w-full bg-slate-50 dark:bg-slate-950 h-screen flex flex-col overflow-y-auto custom-scrollbar sticky top-0 z-20 transition-colors duration-300 border-r border-slate-200 dark:border-slate-800">
       <div className="p-4 space-y-4">
         {/* Perfil e XP Card */}
         <div className="bg-white dark:bg-slate-900 rounded-[2rem] p-5 border border-slate-200 dark:border-slate-800 shadow-sm relative group overflow-hidden">

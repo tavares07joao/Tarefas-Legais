@@ -93,7 +93,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = React.memo(({ task, onCl
 
           {/* Título */}
           <div className="space-y-2">
-            <h1 className="text-4xl font-black text-slate-100 tracking-tight leading-none">
+            <h1 className="text-2xl md:text-3xl lg:text-4xl font-black text-slate-100 tracking-tight leading-tight break-words">
               {task.title}
             </h1>
           </div>

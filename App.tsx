@@ -564,7 +564,7 @@ const App: React.FC = () => {
         />
       )}
 
-      <div className={`fixed inset-y-0 left-0 z-50 transform transition-all duration-300 md:relative md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} ${!isDesktopSidebarOpen ? 'md:w-0 md:opacity-0 md:pointer-events-none' : 'md:w-80 md:opacity-100'}`}>
+      <div className={`fixed inset-y-0 left-0 z-50 transform transition-all duration-300 md:relative md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} ${!isDesktopSidebarOpen ? 'md:w-0 md:opacity-0 md:pointer-events-none' : 'md:w-72 lg:w-80 md:opacity-100'}`}>
         <Sidebar 
           stats={stats} 
           tasks={tasks}
@@ -708,13 +708,13 @@ const App: React.FC = () => {
           ))}
         </div>
 
-        <div className={`flex-1 overflow-x-auto md:overflow-x-visible overflow-y-hidden flex flex-col md:flex-row p-4 md:p-8 md:gap-10 bg-slate-50 dark:bg-slate-950 ${isDraggingGlobal ? 'dragging-active' : ''}`}>
+        <div className={`flex-1 min-h-0 overflow-x-auto overflow-y-hidden flex flex-col md:flex-row p-4 md:p-6 lg:p-8 md:gap-6 lg:gap-10 bg-slate-50 dark:bg-slate-950 ${isDraggingGlobal ? 'dragging-active' : ''}`}>
           {(['todo', 'in-progress', 'done'] as TaskStatus[]).map(status => (
             <div 
               key={status} 
               onDrop={(e) => onDrop(e, status)}
               onDragOver={(e) => e.preventDefault()}
-              className={`flex-col w-full md:w-96 flex-shrink-0 transition-opacity duration-300 ${activeTab === status ? 'flex' : 'hidden md:flex'}`}
+              className={`flex-col w-full md:w-[320px] lg:w-[384px] xl:w-[420px] flex-shrink-0 transition-opacity duration-300 max-h-full ${activeTab === status ? 'flex' : 'hidden md:flex'}`}
             >
               <div className="hidden md:flex items-center justify-between mb-8 px-4">
                 <div className="flex items-center gap-4">
@@ -948,7 +948,7 @@ const TaskModal: React.FC<{task: any, onClose: any, onSave: any}> = ({ task, onC
     <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
       <div className="bg-white dark:bg-slate-900 rounded-[2rem] md:rounded-[3rem] w-full max-w-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-300 border border-slate-200 dark:border-slate-800 flex flex-col max-h-[90vh]">
         <div className="px-6 md:px-10 py-6 md:py-8 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-950/30">
-          <h2 className="text-lg md:text-xl font-black text-slate-800 dark:text-slate-100 uppercase tracking-tighter">{task ? 'Editar Tarefa' : 'Lançar Tarefa'}</h2>
+          <h2 className="text-base md:text-lg lg:text-xl font-black text-slate-800 dark:text-slate-100 uppercase tracking-tighter">{task ? 'Editar Tarefa' : 'Lançar Tarefa'}</h2>
           <button onClick={onClose} className="p-2 md:p-3 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 rounded-full transition-all text-slate-500 dark:text-slate-400 border border-slate-300 dark:border-slate-700">
             <Plus className="w-5 h-5 rotate-45" />
           </button>
@@ -968,7 +968,7 @@ const TaskModal: React.FC<{task: any, onClose: any, onSave: any}> = ({ task, onC
             <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest ml-2">Título da Tarefa</label>
             <input 
               required autoFocus type="text" value={title} onChange={(e) => setTitle(e.target.value)}
-              className="w-full text-2xl md:text-3xl font-black placeholder:text-slate-200 dark:placeholder:text-slate-800 text-slate-900 dark:text-slate-100 border-none focus:ring-0 outline-none p-0 tracking-tight bg-transparent"
+              className="w-full text-xl md:text-2xl lg:text-3xl font-black placeholder:text-slate-200 dark:placeholder:text-slate-800 text-slate-900 dark:text-slate-100 border-none focus:ring-0 outline-none p-0 tracking-tight bg-transparent"
               placeholder="Digite o título..."
             />
           </div>

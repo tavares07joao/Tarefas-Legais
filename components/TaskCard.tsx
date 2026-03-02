@@ -68,7 +68,7 @@ const TaskCard: React.FC<TaskCardProps> = React.memo(({ task, onDragStart, onDra
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
       onClick={() => onView(task)}
-      className={`group p-4 md:p-5 rounded-[1.5rem] md:rounded-[2rem] border transition-all duration-300 cursor-pointer active:scale-[0.98] select-none relative overflow-hidden touch-pan-y
+      className={`group p-4 md:p-5 rounded-[1.5rem] md:rounded-[2rem] border transition-all duration-300 cursor-pointer active:scale-[0.98] select-none relative overflow-hidden touch-pan-y flex flex-col min-h-[180px] md:min-h-[200px]
         /* Classes Base */
         bg-white dark:bg-slate-900 shadow-xl transition-colors duration-300
         /* Estilo de Arraste (Local) */
@@ -158,7 +158,7 @@ const TaskCard: React.FC<TaskCardProps> = React.memo(({ task, onDragStart, onDra
         </div>
       </div>
 
-      <h4 className={`font-bold mb-2 line-clamp-2 leading-tight tracking-tight text-base md:text-lg relative z-10 transition-colors
+      <h4 className={`font-bold mb-2 break-words leading-tight tracking-tight text-base md:text-lg relative z-10 transition-colors flex-1
         ${isDelayed ? 'text-rose-600 dark:text-rose-50' : 'text-slate-800 dark:text-slate-100'}`}>
         {task.title}
       </h4>
@@ -166,7 +166,7 @@ const TaskCard: React.FC<TaskCardProps> = React.memo(({ task, onDragStart, onDra
       {task.description && (
         <div className="flex gap-2 mb-3 md:mb-4 bg-slate-50 dark:bg-slate-950/30 p-2.5 md:p-3 rounded-xl md:rounded-2xl border border-slate-100 dark:border-slate-800/50 relative z-10 transition-colors">
           <AlignLeft className="w-3 h-3 text-slate-400 dark:text-slate-600 flex-shrink-0 mt-0.5" />
-          <p className="text-[10px] md:text-[11px] text-slate-500 dark:text-slate-500 line-clamp-2 leading-relaxed italic">
+          <p className="text-[10px] md:text-[11px] text-slate-500 dark:text-slate-500 break-words leading-relaxed italic">
             {task.description}
           </p>
         </div>
