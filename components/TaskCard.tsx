@@ -31,7 +31,8 @@ const TaskCard: React.FC<TaskCardProps> = React.memo(({ task, onDragStart, onDra
   }, [task.status, task.completedAt]);
   
   const priority = PRIORITY_CONFIG[task.priority];
-  const dateStr = new Date(task.createdAt).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+  const dateStr = new Date(task.createdAt).toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
+  const formattedDate = dateStr.charAt(0).toUpperCase() + dateStr.slice(1);
   
   const taskDate = new Date(task.createdAt);
   taskDate.setHours(0, 0, 0, 0);
@@ -72,7 +73,7 @@ const TaskCard: React.FC<TaskCardProps> = React.memo(({ task, onDragStart, onDra
         /* Classes Base */
         bg-white dark:bg-slate-900 shadow-xl transition-colors duration-300
         /* Estilo de Arraste (Local) */
-        ${isDragging ? 'is-dragging-locally opacity-20 scale-95 border-indigo-500 shadow-2xl z-[50]' : 'border-slate-200 dark:border-slate-800 hover:border-indigo-400 dark:hover:border-indigo-500/50'}
+        ${isDragging ? 'is-dragging-locally opacity-40 scale-105 border-indigo-500 shadow-[0_20px_50px_rgba(99,102,241,0.3)] z-[50] rotate-2' : 'border-slate-200 dark:border-slate-800 hover:border-indigo-400 dark:hover:border-indigo-500/50'}
         /* Estilo quando OUTRO card está sendo arrastado (Global) */
         [.dragging-active_&]:not(.is-dragging-locally):blur-[1px] [.dragging-active_&]:not(.is-dragging-locally):opacity-40
         /* Atraso */
@@ -186,10 +187,10 @@ const TaskCard: React.FC<TaskCardProps> = React.memo(({ task, onDragStart, onDra
         })}
       </div>
 
-      <div className="flex items-center justify-between pt-3 md:pt-4 border-t border-slate-100 dark:border-slate-800/50 relative z-10 transition-colors">
+      <div className="flex items-center justify-between pt-3 md:pt-4 border-t border-slate-100 dark:border-slate-800/50 relative z-10 transition-colors mt-auto">
         <div className="flex items-center gap-2 text-[9px] md:text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">
           <Calendar className="w-3 h-3" />
-          {dateStr}
+          {formattedDate}
         </div>
         <div className="flex items-center gap-1.5">
           {isRecurring && <Repeat className="w-3 h-3 text-indigo-400 dark:text-indigo-500/50" />}

@@ -58,7 +58,11 @@ const App: React.FC = () => {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [viewingTask, setViewingTask] = useState<Task | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedDate, setSelectedDate] = useState<number | null>(null);
+  const [selectedDate, setSelectedDate] = useState<number | null>(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  });
   
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -67,6 +71,7 @@ const App: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isDesktopSidebarOpen, setIsDesktopSidebarOpen] = useState(true);
   const [isDraggingGlobal, setIsDraggingGlobal] = useState(false);
+  const [dragOverStatus, setDragOverStatus] = useState<TaskStatus | null>(null);
   const hasCheckedPenalties = useRef(false);
 
   useEffect(() => {
@@ -473,12 +478,14 @@ const App: React.FC = () => {
 
   const onDragEnd = useCallback(() => {
     setIsDraggingGlobal(false);
+    setDragOverStatus(null);
   }, []);
 
   const onDrop = useCallback((e: React.DragEvent, status: TaskStatus) => {
     const taskId = e.dataTransfer.getData('taskId');
     updateTask(taskId, { status });
     setIsDraggingGlobal(false);
+    setDragOverStatus(null);
   }, [updateTask]);
 
   const filteredTasks = useMemo(() => {
@@ -488,8 +495,8 @@ const App: React.FC = () => {
       
       if (!matchesSearch) return false;
 
-      // Se não houver data selecionada, mostra tudo que a busca filtrar
-      if (!selectedDate) return true;
+      // Se não houver data selecionada, o Kanban fica vazio (conforme solicitado)
+      if (!selectedDate) return false;
 
       const filterDate = new Date(selectedDate);
       filterDate.setHours(0, 0, 0, 0);
@@ -713,8 +720,12 @@ const App: React.FC = () => {
             <div 
               key={status} 
               onDrop={(e) => onDrop(e, status)}
-              onDragOver={(e) => e.preventDefault()}
-              className={`flex-col w-full md:w-[320px] lg:w-[384px] xl:w-[420px] flex-shrink-0 transition-opacity duration-300 max-h-full ${activeTab === status ? 'flex' : 'hidden md:flex'}`}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragOverStatus(status);
+              }}
+              onDragLeave={() => setDragOverStatus(null)}
+              className={`flex-col w-full md:w-[320px] lg:w-[384px] xl:w-[420px] flex-shrink-0 transition-all duration-300 max-h-full rounded-[2.5rem] ${activeTab === status ? 'flex' : 'hidden md:flex'} ${dragOverStatus === status ? 'bg-indigo-500/5 ring-4 ring-indigo-500/20 scale-[1.01]' : ''}`}
             >
               <div className="hidden md:flex items-center justify-between mb-8 px-4">
                 <div className="flex items-center gap-4">
