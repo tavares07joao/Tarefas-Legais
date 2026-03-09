@@ -6,16 +6,16 @@ import { PRIORITY_CONFIG } from '../constants';
 
 interface TaskCardProps {
   task: Task;
-  onDragStart: (e: React.DragEvent, taskId: string) => void;
-  onDragEnd: () => void;
   onEdit: (task: Task) => void;
   onDelete: (taskId: string) => void;
   onView: (task: Task) => void;
   onComplete?: (taskId: string) => void;
+  provided?: any;
+  innerRef?: React.Ref<HTMLDivElement>;
+  isDragging?: boolean;
 }
 
-const TaskCard: React.FC<TaskCardProps> = React.memo(({ task, onDragStart, onDragEnd, onEdit, onDelete, onView, onComplete }) => {
-  const [isDragging, setIsDragging] = useState(false);
+const TaskCard: React.FC<TaskCardProps> = React.memo(({ task, onEdit, onDelete, onView, onComplete, provided, innerRef, isDragging }) => {
   const [showLocalConfetti, setShowLocalConfetti] = useState(false);
 
   useEffect(() => {
@@ -46,16 +46,6 @@ const TaskCard: React.FC<TaskCardProps> = React.memo(({ task, onDragStart, onDra
   const isDelayed = task.tags.includes('Atrasada') || isOverdue;
   const isRecurring = task.recurrence && task.recurrence !== 'none';
 
-  const handleDragStart = (e: React.DragEvent) => {
-    setIsDragging(true);
-    onDragStart(e, task.id);
-  };
-
-  const handleDragEnd = () => {
-    setIsDragging(false);
-    onDragEnd();
-  };
-
   const handleComplete = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (onComplete) {
@@ -65,15 +55,15 @@ const TaskCard: React.FC<TaskCardProps> = React.memo(({ task, onDragStart, onDra
 
   return (
     <div
-      draggable
-      onDragStart={handleDragStart}
-      onDragEnd={handleDragEnd}
+      ref={innerRef}
+      {...provided?.draggableProps}
+      {...provided?.dragHandleProps}
       onClick={() => onView(task)}
-      className={`group p-4 md:p-5 rounded-[1.5rem] md:rounded-[2rem] border transition-all duration-300 cursor-pointer active:scale-[0.98] select-none relative overflow-hidden touch-pan-y flex flex-col min-h-[180px] md:min-h-[200px]
+      className={`group p-4 md:p-5 rounded-[1.5rem] md:rounded-[2rem] border cursor-pointer active:scale-[0.98] select-none relative overflow-hidden touch-pan-y flex flex-col min-h-[180px] md:min-h-[200px]
         /* Classes Base */
         bg-white dark:bg-slate-900 shadow-xl transition-colors duration-300
         /* Estilo de Arraste (Local) */
-        ${isDragging ? 'is-dragging-locally opacity-40 scale-105 border-indigo-500 shadow-[0_20px_50px_rgba(99,102,241,0.3)] z-[50] rotate-2' : 'border-slate-200 dark:border-slate-800 hover:border-indigo-400 dark:hover:border-indigo-500/50'}
+        ${isDragging ? 'is-dragging-locally border-indigo-500 shadow-[0_20px_50px_rgba(99,102,241,0.4)] z-[100] ring-4 ring-indigo-500/20' : 'border-slate-200 dark:border-slate-800 hover:border-indigo-400 dark:hover:border-indigo-500/50 transition-all duration-300'}
         /* Estilo quando OUTRO card está sendo arrastado (Global) */
         [.dragging-active_&]:not(.is-dragging-locally):blur-[1px] [.dragging-active_&]:not(.is-dragging-locally):opacity-40
         /* Atraso */
@@ -170,6 +160,23 @@ const TaskCard: React.FC<TaskCardProps> = React.memo(({ task, onDragStart, onDra
           <p className="text-[10px] md:text-[11px] text-slate-500 dark:text-slate-500 break-words leading-relaxed italic">
             {task.description}
           </p>
+        </div>
+      )}
+
+      {task.subtasks && task.subtasks.length > 0 && (
+        <div className="mb-4 relative z-10">
+          <div className="flex justify-between items-center mb-1.5">
+            <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Subtarefas</span>
+            <span className="text-[9px] font-black text-indigo-500">
+              {task.subtasks.filter(s => s.isCompleted).length}/{task.subtasks.length}
+            </span>
+          </div>
+          <div className="h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+            <div 
+              className="h-full bg-indigo-500 transition-all duration-500"
+              style={{ width: `${(task.subtasks.filter(s => s.isCompleted).length / task.subtasks.length) * 100}%` }}
+            />
+          </div>
         </div>
       )}
 

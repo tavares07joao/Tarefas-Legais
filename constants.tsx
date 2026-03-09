@@ -37,7 +37,14 @@ export const PRIORITY_CONFIG = {
   high: { label: 'Alta', color: 'bg-rose-900/40 text-rose-300 border-rose-800/50', icon: <AlertCircle className="w-3 h-3" /> }
 };
 
-import { MusicTrack } from './types';
+import { MusicTrack, Achievement } from './types';
+
+export const ACHIEVEMENTS: Achievement[] = [
+  { id: 'first-task', title: 'Primeiro Passo', description: 'Conclua sua primeira tarefa', icon: '🎯' },
+  { id: 'streak-3', title: 'Fogo Constante', description: 'Mantenha um streak de 3 dias', icon: '🔥' },
+  { id: 'level-5', title: 'Veterano', description: 'Alcance o nível 5', icon: '🎖️' },
+  { id: 'focus-master', title: 'Mestre do Foco', description: 'Complete 5 sessões de foco', icon: '🧘' },
+];
 
 export const FOCUS_TRACKS: MusicTrack[] = [
   { 

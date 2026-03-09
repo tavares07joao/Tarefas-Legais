@@ -576,7 +576,7 @@ const Sidebar: React.FC<SidebarProps> = React.memo(({ stats, tasks, selectedDate
         </div>
         <div className="mt-auto p-6 flex justify-center">
           <span className="text-[10px] font-black text-slate-300 dark:text-slate-700 uppercase tracking-[0.3em] select-none">
-            v.b1.01
+            v.b1.02
           </span>
         </div>
       </div>

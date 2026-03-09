@@ -90,6 +90,33 @@ const ProfileModal: React.FC<ProfileModalProps> = React.memo(({ stats, theme, on
               />
             </div>
 
+            {/* Conquistas */}
+            <div className="space-y-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+              <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest ml-2 flex items-center gap-2">
+                Conquistas Desbloqueadas
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                {stats.achievements && stats.achievements.length > 0 ? (
+                  stats.achievements.map(achievement => (
+                    <div 
+                      key={achievement.id}
+                      className="p-4 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/40 rounded-2xl flex flex-col items-center text-center gap-2 animate-in zoom-in duration-300"
+                    >
+                      <span className="text-3xl">{achievement.icon}</span>
+                      <div className="space-y-1">
+                        <h4 className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-tight">{achievement.title}</h4>
+                        <p className="text-[8px] text-slate-500 dark:text-slate-500 font-bold leading-tight">{achievement.description}</p>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="col-span-2 py-8 bg-slate-50 dark:bg-slate-950/50 border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl flex flex-col items-center justify-center opacity-50">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nenhuma conquista ainda</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
             {/* Seção de Tema (Aparência) - Agora no final */}
             <div className="space-y-3 pt-4 border-t border-slate-100 dark:border-slate-800">
               <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest ml-2 flex items-center gap-2">

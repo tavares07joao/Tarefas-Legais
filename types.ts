@@ -3,6 +3,20 @@ export type TaskStatus = 'todo' | 'in-progress' | 'done';
 export type Priority = 'low' | 'medium' | 'high';
 export type RecurrenceType = 'none' | 'daily' | 'weekly' | 'monthly';
 
+export interface SubTask {
+  id: string;
+  title: string;
+  isCompleted: boolean;
+}
+
+export interface Achievement {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
+  unlockedAt?: number;
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -11,8 +25,10 @@ export interface Task {
   priority: Priority;
   tags: string[];
   createdAt: number;
+  order?: number;
   startedAt?: number;
   completedAt?: number;
+  subtasks?: SubTask[];
   // Recorrência
   recurrence?: RecurrenceType;
   recurrenceEndDate?: number;
@@ -27,6 +43,8 @@ export interface UserStats {
   name?: string;
   avatarUrl?: string;
   bio?: string;
+  achievements?: Achievement[];
+  focusSessionsCompleted?: number;
   // Sistema de Streak (Placeholder)
   streak: number;
   lastActivityTimestamp?: number;

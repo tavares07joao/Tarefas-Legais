@@ -1,7 +1,7 @@
 
 import React from 'react';
-import { X, Calendar, Clock, AlertTriangle, AlignLeft, PlayCircle, CheckCircle, Repeat, Trash } from 'lucide-react';
-import { Task } from '../types';
+import { X, Calendar, Clock, AlertTriangle, AlignLeft, PlayCircle, CheckCircle, Repeat, Trash, Edit3, ArrowRight } from 'lucide-react';
+import { Task, TaskStatus } from '../types';
 import { PRIORITY_CONFIG, STATUS_CONFIG } from '../constants';
 
 interface TaskDetailModalProps {
@@ -9,9 +9,20 @@ interface TaskDetailModalProps {
   onClose: () => void;
   onCancelRecurrence?: (taskId: string) => void;
   onDelete?: (taskId: string) => void;
+  onToggleSubtask?: (taskId: string, subtaskId: string) => void;
+  onEdit?: (task: Task) => void;
+  onUpdateStatus?: (taskId: string, status: TaskStatus) => void;
 }
 
-const TaskDetailModal: React.FC<TaskDetailModalProps> = React.memo(({ task, onClose, onCancelRecurrence, onDelete }) => {
+const TaskDetailModal: React.FC<TaskDetailModalProps> = React.memo(({ 
+  task, 
+  onClose, 
+  onCancelRecurrence, 
+  onDelete, 
+  onToggleSubtask,
+  onEdit,
+  onUpdateStatus
+}) => {
   const priority = PRIORITY_CONFIG[task.priority];
   const status = STATUS_CONFIG[task.status];
   const createdAtStr = new Date(task.createdAt).toLocaleString('pt-BR');
@@ -104,7 +115,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = React.memo(({ task, onCl
               <AlignLeft className="w-4 h-4" />
               <span className="text-[10px] font-black uppercase tracking-widest">Instruções Completas</span>
             </div>
-            <div className="bg-slate-950/50 border border-slate-800 p-8 rounded-[2rem] min-h-[150px]">
+            <div className="bg-slate-950/50 border border-slate-800 p-8 rounded-[2rem] min-h-[100px]">
               {task.description ? (
                 <p className="text-slate-300 leading-relaxed whitespace-pre-wrap font-medium">
                   {task.description}
@@ -114,6 +125,38 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = React.memo(({ task, onCl
               )}
             </div>
           </div>
+
+          {/* Subtarefas */}
+          {task.subtasks && task.subtasks.length > 0 && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 text-slate-500">
+                <CheckCircle className="w-4 h-4" />
+                <span className="text-[10px] font-black uppercase tracking-widest">Checklist de Subtarefas</span>
+              </div>
+              <div className="grid gap-3">
+                {task.subtasks.map(s => (
+                  <button 
+                    key={s.id}
+                    onClick={() => onToggleSubtask?.(task.id, s.id)}
+                    className={`flex items-center gap-4 p-5 rounded-2xl border transition-all text-left group
+                      ${s.isCompleted 
+                        ? 'bg-emerald-900/10 border-emerald-900/30 text-emerald-400' 
+                        : 'bg-slate-950/50 border-slate-800 text-slate-300 hover:border-indigo-500/50'}`}
+                  >
+                    <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all
+                      ${s.isCompleted 
+                        ? 'bg-emerald-500 border-emerald-500 text-white' 
+                        : 'border-slate-700 group-hover:border-indigo-500'}`}>
+                      {s.isCompleted && <CheckCircle className="w-4 h-4" />}
+                    </div>
+                    <span className={`text-sm font-bold ${s.isCompleted ? 'line-through opacity-50' : ''}`}>
+                      {s.title}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Seção de Recorrência */}
           {isRecurring && (
@@ -177,20 +220,59 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = React.memo(({ task, onCl
         </div>
 
         {/* Footer Action */}
-        <div className="px-10 py-6 border-t border-slate-800 bg-slate-950/30 flex justify-between items-center">
-          <button 
-            onClick={() => onDelete?.(task.id)}
-            className="flex items-center gap-2 px-6 py-3 bg-red-900/20 text-red-400 font-black rounded-2xl hover:bg-red-900/40 transition-all uppercase tracking-widest text-[10px] border border-red-900/30"
-          >
-            <Trash className="w-4 h-4" />
-            Excluir Jornada
-          </button>
-          <button 
-            onClick={onClose}
-            className="px-8 py-3 bg-slate-800 text-slate-300 font-black rounded-2xl hover:bg-slate-700 transition-all uppercase tracking-widest text-[10px] border border-slate-700"
-          >
-            Fechar Visualização
-          </button>
+        <div className="px-10 py-6 border-t border-slate-800 bg-slate-950/30 flex flex-wrap gap-4 justify-between items-center">
+          <div className="flex gap-3">
+            <button 
+              onClick={() => onDelete?.(task.id)}
+              className="flex items-center gap-2 px-5 py-3 bg-red-900/20 text-red-400 font-black rounded-2xl hover:bg-red-900/40 transition-all uppercase tracking-widest text-[10px] border border-red-900/30 active:scale-95"
+            >
+              <Trash className="w-4 h-4" />
+              Excluir
+            </button>
+            <button 
+              onClick={() => onEdit?.(task)}
+              className="flex items-center gap-2 px-5 py-3 bg-indigo-900/20 text-indigo-400 font-black rounded-2xl hover:bg-indigo-900/40 transition-all uppercase tracking-widest text-[10px] border border-indigo-900/30 active:scale-95"
+            >
+              <Edit3 className="w-4 h-4" />
+              Editar
+            </button>
+          </div>
+
+          <div className="flex gap-3">
+            {task.status === 'todo' && (
+              <button 
+                onClick={() => onUpdateStatus?.(task.id, 'in-progress')}
+                className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white font-black rounded-2xl hover:bg-blue-500 transition-all uppercase tracking-widest text-[10px] shadow-lg shadow-blue-500/20 active:scale-95"
+              >
+                <PlayCircle className="w-4 h-4" />
+                Iniciar Jornada
+              </button>
+            )}
+            {task.status === 'in-progress' && (
+              <button 
+                onClick={() => onUpdateStatus?.(task.id, 'done')}
+                className="flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white font-black rounded-2xl hover:bg-emerald-500 transition-all uppercase tracking-widest text-[10px] shadow-lg shadow-emerald-500/20 active:scale-95"
+              >
+                <CheckCircle className="w-4 h-4" />
+                Concluir
+              </button>
+            )}
+            {task.status === 'done' && (
+              <button 
+                onClick={() => onUpdateStatus?.(task.id, 'todo')}
+                className="flex items-center gap-2 px-6 py-3 bg-slate-700 text-slate-300 font-black rounded-2xl hover:bg-slate-600 transition-all uppercase tracking-widest text-[10px] active:scale-95"
+              >
+                <ArrowRight className="w-4 h-4 rotate-180" />
+                Reabrir
+              </button>
+            )}
+            <button 
+              onClick={onClose}
+              className="px-6 py-3 bg-slate-800 text-slate-300 font-black rounded-2xl hover:bg-slate-700 transition-all uppercase tracking-widest text-[10px] border border-slate-700 active:scale-95"
+            >
+              Fechar
+            </button>
+          </div>
         </div>
       </div>
     </div>

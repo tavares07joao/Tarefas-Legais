@@ -1,9 +1,11 @@
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import ReactDOM from 'react-dom';
 import { Plus, Search, Filter, X, Calendar as CalendarIcon, Repeat, CheckCircle, Flame, CalendarClock, Menu, ChevronLeft, ChevronRight, Trash2, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { Task, UserStats, TaskStatus, Priority, RecurrenceType } from './types';
-import { STATUS_CONFIG, XP_PER_TASK, NEXT_LEVEL_XP_BASE, PRIORITY_CONFIG } from './constants';
+import { STATUS_CONFIG, XP_PER_TASK, NEXT_LEVEL_XP_BASE, PRIORITY_CONFIG, ACHIEVEMENTS } from './constants';
 import Sidebar from './components/Sidebar';
 import TaskCard from './components/TaskCard';
 import TaskDetailModal from './components/TaskDetailModal';
@@ -274,6 +276,34 @@ const App: React.FC = () => {
     updateActivity();
   }, [updateActivity]);
 
+  useEffect(() => {
+    const checkAchievements = () => {
+      const unlockedIds = (stats.achievements || []).map(a => a.id);
+      const toUnlock: string[] = [];
+
+      if (stats.tasksCompleted >= 1 && !unlockedIds.includes('first-task')) toUnlock.push('first-task');
+      if (stats.streak >= 3 && !unlockedIds.includes('streak-3')) toUnlock.push('streak-3');
+      if (stats.level >= 5 && !unlockedIds.includes('level-5')) toUnlock.push('level-5');
+      if ((stats.focusSessionsCompleted || 0) >= 5 && !unlockedIds.includes('focus-master')) toUnlock.push('focus-master');
+
+      if (toUnlock.length > 0) {
+        const newAchievements = [...(stats.achievements || [])];
+        toUnlock.forEach(id => {
+          const achievement = ACHIEVEMENTS.find(a => a.id === id);
+          if (achievement) {
+            newAchievements.push({ ...achievement, unlockedAt: Date.now() });
+            addNotification('info', `Conquista Desbloqueada: ${achievement.title}!`, 100);
+            grantXp(100, false); // Bônus por conquista
+          }
+        });
+        setStats(prev => ({ ...prev, achievements: newAchievements }));
+      }
+    };
+
+    const timer = setTimeout(checkAchievements, 1000);
+    return () => clearTimeout(timer);
+  }, [stats.tasksCompleted, stats.streak, stats.level, stats.focusSessionsCompleted, addNotification, grantXp]);
+
   const applyPenalty = useCallback((amount: number) => {
     setStats(prev => {
       let newXp = prev.xp - amount;
@@ -296,6 +326,26 @@ const App: React.FC = () => {
       };
     });
   }, []);
+
+  const toggleSubtask = useCallback((taskId: string, subtaskId: string) => {
+    setTasks(prev => prev.map(task => {
+      if (task.id === taskId && task.subtasks) {
+        const newSubtasks = task.subtasks.map(s => 
+          s.id === subtaskId ? { ...s, isCompleted: !s.isCompleted } : s
+        );
+        
+        // Se todas as subtarefas forem concluídas, podemos dar um bônus de XP ou sugerir concluir a tarefa
+        const allCompleted = newSubtasks.every(s => s.isCompleted);
+        if (allCompleted && !task.subtasks.every(s => s.isCompleted)) {
+          addNotification('info', 'Todas as subtarefas concluídas! +5 XP', 5);
+          grantXp(5, false);
+        }
+
+        return { ...task, subtasks: newSubtasks };
+      }
+      return task;
+    }));
+  }, [grantXp, addNotification]);
 
   const updateProfile = (data: Partial<UserStats>) => {
     setStats(prev => ({ ...prev, ...data }));
@@ -321,7 +371,9 @@ const App: React.FC = () => {
       createdAt: taskTimestamp,
       recurrence: data.recurrence || 'none',
       recurrenceEndDate: data.recurrenceEndDate,
-      recurrenceDays: data.recurrenceDays
+      recurrenceDays: data.recurrenceDays,
+      subtasks: data.subtasks || [],
+      order: tasks.length
     };
     setTasks([...tasks, newTask]);
     setIsModalOpen(false);
@@ -357,6 +409,7 @@ const App: React.FC = () => {
           let newTags = [...(updates.tags || t.tags)];
           let newStartedAt = updates.startedAt || t.startedAt;
           let newCompletedAt = updates.completedAt || t.completedAt;
+          let newSubtasks = updates.subtasks || t.subtasks;
 
           if (t.status !== 'in-progress' && updates.status === 'in-progress') {
             newStartedAt = Date.now();
@@ -420,7 +473,8 @@ const App: React.FC = () => {
                     createdAt: nextDate.getTime(), // Âncora na data nominal
                     startedAt: undefined,
                     completedAt: undefined,
-                    tags: []
+                    tags: [],
+                    subtasks: t.subtasks?.map(s => ({ ...s, isCompleted: false }))
                   };
                   setTasks(currentTasks => {
                     // Evitar duplicatas se o usuário clicar rápido ou houver lag
@@ -471,22 +525,106 @@ const App: React.FC = () => {
     }
   }, [taskToDelete]);
 
-  const onDragStart = useCallback((e: React.DragEvent, taskId: string) => {
-    e.dataTransfer.setData('taskId', taskId);
+  const onDragStart = useCallback(() => {
     setIsDraggingGlobal(true);
   }, []);
 
-  const onDragEnd = useCallback(() => {
-    setIsDraggingGlobal(false);
-    setDragOverStatus(null);
-  }, []);
+  const onDragEnd = useCallback((result: DropResult) => {
+    const { destination, source, draggableId } = result;
 
-  const onDrop = useCallback((e: React.DragEvent, status: TaskStatus) => {
-    const taskId = e.dataTransfer.getData('taskId');
-    updateTask(taskId, { status });
     setIsDraggingGlobal(false);
     setDragOverStatus(null);
-  }, [updateTask]);
+
+    if (!destination) return;
+
+    if (
+      destination.droppableId === source.droppableId &&
+      destination.index === source.index
+    ) {
+      return;
+    }
+
+    const newStatus = destination.droppableId as TaskStatus;
+    const oldStatus = source.droppableId as TaskStatus;
+
+    // Se mudou de coluna no mobile, atualiza a aba ativa
+    if (newStatus !== oldStatus) {
+      setActiveTab(newStatus);
+    }
+
+    setTasks(prev => {
+      const newTasks = [...prev];
+      const taskIndex = newTasks.findIndex(t => t.id === draggableId);
+      if (taskIndex === -1) return prev;
+
+      const [movedTask] = newTasks.splice(taskIndex, 1);
+      
+      // Se mudou de status, atualiza o status
+      if (newStatus !== oldStatus) {
+        movedTask.status = newStatus;
+        
+        // Lógica de conclusão/início (reutilizando parte da lógica de updateTask)
+        if (newStatus === 'done' && oldStatus !== 'done') {
+          movedTask.completedAt = Date.now();
+          const finishTag = `Terminado em: ${formatTagDate(movedTask.completedAt)}`;
+          movedTask.tags = movedTask.tags.filter(tag => !tag.startsWith('Terminado em:') && tag !== 'Atrasada');
+          movedTask.tags.push(finishTag);
+          grantXp(XP_PER_TASK[movedTask.priority]);
+          addNotification('xp', `Jornada Concluída! +${XP_PER_TASK[movedTask.priority]} XP`, XP_PER_TASK[movedTask.priority]);
+        } else if (newStatus === 'in-progress' && oldStatus === 'todo') {
+          movedTask.startedAt = Date.now();
+          const startTag = `Começado em: ${formatTagDate(movedTask.startedAt)}`;
+          movedTask.tags = movedTask.tags.filter(tag => !tag.startsWith('Começado em:'));
+          movedTask.tags.push(startTag);
+          addNotification('info', 'Iniciando jornada...');
+          updateActivity();
+        } else if (oldStatus === 'done' && newStatus !== 'done') {
+          movedTask.completedAt = undefined;
+          movedTask.tags = movedTask.tags.filter(tag => !tag.startsWith('Terminado em:'));
+        }
+      }
+
+      // Reordenar dentro da lista filtrada
+      // Precisamos encontrar a posição correta no array global
+      // Uma forma simples é usar o order, mas como estamos usando splice, 
+      // podemos apenas reinserir e depois atualizar todos os orders.
+      
+      // Encontrar as tarefas que estão na mesma coluna de destino (já filtradas por data no useMemo)
+      // Mas aqui estamos no array global.
+      // O ideal é que o order seja respeitado.
+      
+      // Vamos apenas inserir na nova posição e depois recalcular os orders para essa coluna
+      // Para simplificar, vamos apenas inserir no array global na posição que faça sentido.
+      // Mas o dnd-kit/pangea-dnd trabalha com índices da lista renderizada.
+      
+      // Pegamos a lista de tarefas da coluna de destino (filtradas)
+      const columnTasks = newTasks.filter(t => t.status === newStatus);
+      // Inserimos na posição correta em relação às tarefas daquela coluna
+      // Mas isso é complexo no array global.
+      
+      // Estratégia: 
+      // 1. Removemos a tarefa do array global (já feito)
+      // 2. Encontramos onde inserir no array global para que ela apareça no índice 'destination.index' 
+      //    dentro da sub-lista de tarefas com o mesmo status.
+      
+      let count = 0;
+      let insertIndex = newTasks.length;
+      for (let i = 0; i < newTasks.length; i++) {
+        if (newTasks[i].status === newStatus) {
+          if (count === destination.index) {
+            insertIndex = i;
+            break;
+          }
+          count++;
+        }
+      }
+      
+      newTasks.splice(insertIndex, 0, movedTask);
+      
+      // Atualizar orders para manter consistência (opcional se usarmos a ordem do array)
+      return newTasks.map((t, i) => ({ ...t, order: i }));
+    });
+  }, [grantXp, addNotification, updateActivity, tasks]);
 
   const filteredTasks = useMemo(() => {
     return tasks.filter(t => {
@@ -552,7 +690,7 @@ const App: React.FC = () => {
       }
 
       return false;
-    });
+    }).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   }, [tasks, searchQuery, selectedDate]);
 
   const selectedDateLabel = selectedDate ? new Date(selectedDate).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' }) : null;
@@ -577,7 +715,10 @@ const App: React.FC = () => {
           tasks={tasks}
           selectedDate={selectedDate}
           onDateSelect={setSelectedDate}
-          onFocusComplete={() => grantXp(20, false)} 
+          onFocusComplete={() => {
+            grantXp(20, false);
+            setStats(prev => ({ ...prev, focusSessionsCompleted: (prev.focusSessionsCompleted || 0) + 1 }));
+          }} 
           onEditProfile={() => setIsProfileModalOpen(true)}
           onShowScheduled={() => setIsScheduledModalOpen(true)}
         />
@@ -715,53 +856,92 @@ const App: React.FC = () => {
           ))}
         </div>
 
-        <div className={`flex-1 min-h-0 overflow-x-auto overflow-y-hidden flex flex-col md:flex-row p-4 md:p-6 lg:p-8 md:gap-6 lg:gap-10 bg-slate-50 dark:bg-slate-950 ${isDraggingGlobal ? 'dragging-active' : ''}`}>
-          {(['todo', 'in-progress', 'done'] as TaskStatus[]).map(status => (
-            <div 
-              key={status} 
-              onDrop={(e) => onDrop(e, status)}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setDragOverStatus(status);
-              }}
-              onDragLeave={() => setDragOverStatus(null)}
-              className={`flex-col w-full md:w-[320px] lg:w-[384px] xl:w-[420px] flex-shrink-0 transition-all duration-300 max-h-full rounded-[2.5rem] ${activeTab === status ? 'flex' : 'hidden md:flex'} ${dragOverStatus === status ? 'bg-indigo-500/5 ring-4 ring-indigo-500/20 scale-[1.01]' : ''}`}
-            >
-              <div className="hidden md:flex items-center justify-between mb-8 px-4">
-                <div className="flex items-center gap-4">
-                  <div className={`w-2.5 h-2.5 rounded-full ${status === 'todo' ? 'bg-slate-300 dark:bg-slate-600' : status === 'in-progress' ? 'bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]' : 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]'}`} />
-                  <h3 className="font-black text-slate-400 dark:text-slate-400 text-xs uppercase tracking-[0.2em]">{STATUS_CONFIG[status].label}</h3>
-                  <div className="bg-white dark:bg-slate-900 text-slate-400 dark:text-slate-500 text-[10px] font-black px-3 py-1 rounded-full border border-slate-200 dark:border-slate-800 shadow-sm">
-                    {filteredTasks.filter(t => t.status === status).length}
-                  </div>
-                </div>
-              </div>
+        <DragDropContext onDragStart={onDragStart} onDragEnd={onDragEnd}>
+          <motion.div 
+            onPanEnd={(_, info) => {
+              if (isDraggingGlobal) return;
+              const threshold = 50;
+              const velocityThreshold = 0.2;
+              
+              // Verifica se o movimento foi predominantemente horizontal
+              if (Math.abs(info.offset.x) > Math.abs(info.offset.y) * 1.5) {
+                const statuses: TaskStatus[] = ['todo', 'in-progress', 'done'];
+                const currentIndex = statuses.indexOf(activeTab);
+                
+                if ((info.offset.x < -threshold || info.velocity.x < -velocityThreshold) && currentIndex < statuses.length - 1) {
+                  setActiveTab(statuses[currentIndex + 1]);
+                } else if ((info.offset.x > threshold || info.velocity.x > velocityThreshold) && currentIndex > 0) {
+                  setActiveTab(statuses[currentIndex - 1]);
+                }
+              }
+            }}
+            className={`flex-1 min-h-0 overflow-x-auto overflow-y-hidden flex flex-col md:flex-row p-4 md:p-6 lg:p-8 md:gap-6 lg:gap-10 bg-slate-50 dark:bg-slate-950 touch-pan-y ${isDraggingGlobal ? 'dragging-active' : ''}`}
+          >
+            {(['todo', 'in-progress', 'done'] as TaskStatus[]).map(status => (
+              <Droppable key={status} droppableId={status}>
+                {(provided: any, snapshot: any) => (
+                  <motion.div 
+                    ref={provided.innerRef}
+                    {...provided.droppableProps}
+                    initial={false}
+                    animate={{ 
+                      opacity: activeTab === status ? 1 : 0,
+                      x: activeTab === status ? 0 : (activeTab === 'todo' ? 20 : -20),
+                      display: activeTab === status ? 'flex' : 'none'
+                    }}
+                    transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                    className={`flex-col w-full md:w-[320px] lg:w-[384px] xl:w-[420px] flex-shrink-0 ${isDraggingGlobal ? '' : 'transition-all duration-300'} max-h-full rounded-[2.5rem] md:!flex md:!opacity-100 md:!transform-none ${snapshot.isDraggingOver ? 'bg-indigo-500/5 ring-4 ring-indigo-500/20' : ''}`}
+                  >
+                    <div className="hidden md:flex items-center justify-between mb-8 px-4">
+                      <div className="flex items-center gap-4">
+                        <div className={`w-2.5 h-2.5 rounded-full ${status === 'todo' ? 'bg-slate-300 dark:bg-slate-600' : status === 'in-progress' ? 'bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]' : 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]'}`} />
+                        <h3 className="font-black text-slate-400 dark:text-slate-400 text-xs uppercase tracking-[0.2em]">{STATUS_CONFIG[status].label}</h3>
+                        <div className="bg-white dark:bg-slate-900 text-slate-400 dark:text-slate-500 text-[10px] font-black px-3 py-1 rounded-full border border-slate-200 dark:border-slate-800 shadow-sm">
+                          {filteredTasks.filter(t => t.status === status).length}
+                        </div>
+                      </div>
+                    </div>
 
-              <div className="flex-1 flex flex-col gap-4 md:gap-6 rounded-[2rem] md:rounded-[3rem] bg-slate-100/50 dark:bg-slate-900/30 p-2 md:p-4 border-2 border-dashed border-slate-200 dark:border-slate-900/50 overflow-y-auto custom-scrollbar pb-20 md:pb-10">
-                {filteredTasks
-                  .filter(t => t.status === status)
-                  .map(task => (
-                    <TaskCard 
-                      key={task.id} 
-                      task={task} 
-                      onDragStart={onDragStart} 
-                      onDragEnd={onDragEnd}
-                      onEdit={(t) => { setEditingTask(t); setIsModalOpen(true); }}
-                      onDelete={deleteTask}
-                      onView={(t) => setViewingTask(t)}
-                      onComplete={(id) => updateTask(id, { status: 'done' })}
-                    />
-                  ))}
-                {filteredTasks.filter(t => t.status === status).length === 0 && (
-                  <div className="flex-1 flex flex-col items-center justify-center py-20 opacity-20 select-none">
-                     <CheckCircle className="w-12 h-12 mb-4 text-slate-400" />
-                     <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Nada por aqui ainda</p>
-                  </div>
+                    <div className="flex-1 flex flex-col gap-4 md:gap-6 rounded-[2rem] md:rounded-[3rem] bg-slate-100/50 dark:bg-slate-900/30 p-2 md:p-4 border-2 border-dashed border-slate-200 dark:border-slate-900/50 overflow-y-auto custom-scrollbar pb-20 md:pb-10">
+                      {filteredTasks
+                        .filter(t => t.status === status)
+                        .map((task, index) => (
+                          // @ts-ignore
+                          <Draggable key={task.id} draggableId={task.id} index={index}>
+                            {(provided: any, snapshot: any) => {
+                              const card = (
+                                <TaskCard 
+                                  innerRef={provided.innerRef}
+                                  provided={provided}
+                                  isDragging={snapshot.isDragging}
+                                  task={task} 
+                                  onEdit={(t) => { setEditingTask(t); setIsModalOpen(true); }}
+                                  onDelete={deleteTask}
+                                  onView={(t) => setViewingTask(t)}
+                                  onComplete={(id) => updateTask(id, { status: 'done' })}
+                                />
+                              );
+                              if (snapshot.isDragging) {
+                                return ReactDOM.createPortal(card, document.body);
+                              }
+                              return card;
+                            }}
+                          </Draggable>
+                        ))}
+                      {provided.placeholder}
+                      {filteredTasks.filter(t => t.status === status).length === 0 && (
+                        <div className="flex-1 flex flex-col items-center justify-center py-20 opacity-20 select-none">
+                           <CheckCircle className="w-12 h-12 mb-4 text-slate-400" />
+                           <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Nada por aqui ainda</p>
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
                 )}
-              </div>
-            </div>
-          ))}
-        </div>
+              </Droppable>
+            ))}
+          </motion.div>
+        </DragDropContext>
 
         <button 
           onClick={() => { setEditingTask(null); setIsModalOpen(true); }}
@@ -786,6 +966,16 @@ const App: React.FC = () => {
           onClose={() => setViewingTask(null)} 
           onCancelRecurrence={cancelRecurrence}
           onDelete={deleteTask}
+          onToggleSubtask={toggleSubtask}
+          onEdit={(task) => {
+            setViewingTask(null);
+            setEditingTask(task);
+            setIsModalOpen(true);
+          }}
+          onUpdateStatus={(id, status) => {
+            updateTask(id, { status });
+            setViewingTask(null);
+          }}
         />
       )}
 
@@ -946,6 +1136,18 @@ const TaskModal: React.FC<{task: any, onClose: any, onSave: any}> = ({ task, onC
   const [recurrenceEndDate, setRecurrenceEndDate] = useState<string>(
     task?.recurrenceEndDate ? new Date(task.recurrenceEndDate).toISOString().split('T')[0] : ''
   );
+  const [subtasks, setSubtasks] = useState<any[]>(task?.subtasks || []);
+  const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
+
+  const addSubtask = () => {
+    if (!newSubtaskTitle.trim()) return;
+    setSubtasks(prev => [...prev, { id: generateId(), title: newSubtaskTitle, isCompleted: false }]);
+    setNewSubtaskTitle('');
+  };
+
+  const removeSubtask = (id: string) => {
+    setSubtasks(prev => prev.filter(s => s.id !== id));
+  };
 
   const toggleDay = (day: number) => {
     setRecurrenceDays(prev => 
@@ -972,6 +1174,7 @@ const TaskModal: React.FC<{task: any, onClose: any, onSave: any}> = ({ task, onC
             priority, 
             recurrence, 
             recurrenceDays,
+            subtasks,
             recurrenceEndDate: recurrenceEndDate ? new Date(recurrenceEndDate).getTime() : undefined 
           });
         }} className="p-6 md:p-10 space-y-6 md:space-y-8 overflow-y-auto custom-scrollbar">
@@ -1072,6 +1275,44 @@ const TaskModal: React.FC<{task: any, onClose: any, onSave: any}> = ({ task, onC
               </div>
             </div>
           )}
+
+          <div className="space-y-4">
+            <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest ml-2">Subtarefas (Checklist)</label>
+            <div className="space-y-3">
+              <div className="flex gap-2">
+                <input 
+                  type="text" 
+                  value={newSubtaskTitle} 
+                  onChange={(e) => setNewSubtaskTitle(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addSubtask())}
+                  placeholder="Adicionar item..."
+                  className="flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500/20"
+                />
+                <button 
+                  type="button"
+                  onClick={addSubtask}
+                  className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-500 transition-colors shadow-lg shadow-indigo-500/20"
+                >
+                  <Plus className="w-5 h-5" />
+                </button>
+              </div>
+              
+              <div className="space-y-2">
+                {subtasks.map(s => (
+                  <div key={s.id} className="flex items-center justify-between bg-slate-50 dark:bg-slate-950/50 p-3 rounded-xl border border-slate-100 dark:border-slate-800/50 group">
+                    <span className="text-xs font-medium text-slate-700 dark:text-slate-300">{s.title}</span>
+                    <button 
+                      type="button"
+                      onClick={() => removeSubtask(s.id)}
+                      className="p-1 text-slate-400 hover:text-rose-500 transition-colors opacity-0 group-hover:opacity-100"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
 
           <div className="space-y-4">
             <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest ml-2">Data Limite (Opcional)</label>
