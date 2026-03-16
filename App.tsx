@@ -38,44 +38,16 @@ const safeLocalStorageSet = (key: string, value: string) => {
 };
 
 const App: React.FC = () => {
-  const [tasks, setTasks] = useState<Task[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY_TASKS);
-    try {
-      return saved ? JSON.parse(saved) : [];
-    } catch (e) {
-      console.error("Failed to parse tasks:", e);
-      return [];
-    }
-  });
-  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
-    return (localStorage.getItem(STORAGE_KEY_THEME) as 'light' | 'dark') || 'dark';
-  });
-  const [stats, setStats] = useState<UserStats>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY_STATS);
-    try {
-      return saved ? JSON.parse(saved) : { 
-        level: 1, 
-        xp: 0, 
-        totalXp: 0, 
-        tasksCompleted: 0, 
-        name: 'Usuário',
-        streak: 0, 
-        plantLevel: 0,
-        activeDays: [] 
-      };
-    } catch (e) {
-      console.error("Failed to parse stats:", e);
-      return { 
-        level: 1, 
-        xp: 0, 
-        totalXp: 0, 
-        tasksCompleted: 0, 
-        name: 'Usuário',
-        streak: 0, 
-        plantLevel: 0,
-        activeDays: [] 
-      };
-    }
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [theme, setTheme] = useState<'light' | 'dark'>('dark');
+  const [stats, setStats] = useState<UserStats>({ 
+    level: 1, 
+    xp: 0, 
+    totalXp: 0, 
+    tasksCompleted: 0, 
+    name: 'Usuário',
+    streak: 0, 
+    activeDays: [] 
   });
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
@@ -146,7 +118,18 @@ const App: React.FC = () => {
   }, [tasks, stats.lastPenaltyTimestamp]);
 
   useEffect(() => {
+    const savedTasks = localStorage.getItem(STORAGE_KEY_TASKS);
+    const savedStats = localStorage.getItem(STORAGE_KEY_STATS);
     const savedTheme = localStorage.getItem(STORAGE_KEY_THEME) as 'light' | 'dark' | null;
+    
+    try {
+      if (savedTasks) {
+        const parsedTasks: Task[] = JSON.parse(savedTasks);
+        setTasks(parsedTasks);
+      }
+    } catch (e) {
+      console.error("Failed to parse tasks:", e);
+    }
     
     if (savedTheme) {
       setTheme(savedTheme);
@@ -154,9 +137,8 @@ const App: React.FC = () => {
       setTheme('dark');
     }
 
-    const savedStats = localStorage.getItem(STORAGE_KEY_STATS);
-    if (savedStats) {
-      try {
+    try {
+      if (savedStats) {
         const parsedStats: UserStats = JSON.parse(savedStats);
         
         const now = new Date();
@@ -175,19 +157,15 @@ const App: React.FC = () => {
             const sundayTodayGrace = (diffInDays === 1 && isSunday);
             
             if (!skipSundayGrace && !sundayTodayGrace) {
-              if (parsedStats.streak > 0 || (parsedStats.plantLevel || 0) > 0) {
-                parsedStats.plantLevel = Math.max(0, (parsedStats.plantLevel || 0) - 1);
-                parsedStats.showStreakLoss = true;
-              }
               parsedStats.streak = 0;
             }
           }
         }
         
         setStats(parsedStats);
-      } catch (e) {
-        console.error("Failed to parse stats:", e);
       }
+    } catch (e) {
+      console.error("Failed to parse stats:", e);
     }
   }, []);
 
@@ -255,24 +233,10 @@ const App: React.FC = () => {
           newStreak = 1;
         }
       }
-      
-      let newPlantLevel = prev.plantLevel || 0;
-      if (newStreak > 0) {
-        if (newStreak >= 120) newPlantLevel = Math.max(newPlantLevel, 8);
-        else if (newStreak >= 76) newPlantLevel = Math.max(newPlantLevel, 7);
-        else if (newStreak >= 46) newPlantLevel = Math.max(newPlantLevel, 6);
-        else if (newStreak >= 26) newPlantLevel = Math.max(newPlantLevel, 5);
-        else if (newStreak >= 15) newPlantLevel = Math.max(newPlantLevel, 4);
-        else if (newStreak >= 8) newPlantLevel = Math.max(newPlantLevel, 3);
-        else if (newStreak >= 4) newPlantLevel = Math.max(newPlantLevel, 2);
-        else if (newStreak >= 1) newPlantLevel = Math.max(newPlantLevel, 1);
-      }
 
       return {
         ...prev,
         streak: newStreak,
-        plantLevel: newPlantLevel,
-        showStreakLoss: false,
         lastActivityTimestamp: now,
         activeDays: hasAlreadyActedToday ? activeDays : [...activeDays, todayStr]
       };
@@ -363,6 +327,26 @@ const App: React.FC = () => {
     });
   }, []);
 
+  const toggleSubtask = useCallback((taskId: string, subtaskId: string) => {
+    setTasks(prev => prev.map(task => {
+      if (task.id === taskId && task.subtasks) {
+        const newSubtasks = task.subtasks.map(s => 
+          s.id === subtaskId ? { ...s, isCompleted: !s.isCompleted } : s
+        );
+        
+        // Se todas as subtarefas forem concluídas, podemos dar um bônus de XP ou sugerir concluir a tarefa
+        const allCompleted = newSubtasks.every(s => s.isCompleted);
+        if (allCompleted && !task.subtasks.every(s => s.isCompleted)) {
+          addNotification('info', 'Todas as subtarefas concluídas! +5 XP', 5);
+          grantXp(5, false);
+        }
+
+        return { ...task, subtasks: newSubtasks };
+      }
+      return task;
+    }));
+  }, [grantXp, addNotification]);
+
   const updateProfile = (data: Partial<UserStats>) => {
     setStats(prev => ({ ...prev, ...data }));
   };
@@ -388,6 +372,7 @@ const App: React.FC = () => {
       recurrence: data.recurrence || 'none',
       recurrenceEndDate: data.recurrenceEndDate,
       recurrenceDays: data.recurrenceDays,
+      subtasks: data.subtasks || [],
       order: tasks.length
     };
     setTasks([...tasks, newTask]);
@@ -424,6 +409,7 @@ const App: React.FC = () => {
           let newTags = [...(updates.tags || t.tags)];
           let newStartedAt = updates.startedAt || t.startedAt;
           let newCompletedAt = updates.completedAt || t.completedAt;
+          let newSubtasks = updates.subtasks || t.subtasks;
 
           if (t.status !== 'in-progress' && updates.status === 'in-progress') {
             newStartedAt = Date.now();
@@ -487,7 +473,8 @@ const App: React.FC = () => {
                     createdAt: nextDate.getTime(), // Âncora na data nominal
                     startedAt: undefined,
                     completedAt: undefined,
-                    tags: []
+                    tags: [],
+                    subtasks: t.subtasks?.map(s => ({ ...s, isCompleted: false }))
                   };
                   setTasks(currentTasks => {
                     // Evitar duplicatas se o usuário clicar rápido ou houver lag
@@ -813,6 +800,14 @@ const App: React.FC = () => {
           </div>
           
           <div className="hidden md:flex items-center gap-6 ml-4">
+            <div className="flex items-center gap-3 bg-white dark:bg-slate-900 px-5 py-2 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-lg group/streak">
+              <Flame className={`w-5 h-5 transition-transform duration-500 group-hover/streak:scale-125 ${stats.streak > 0 ? 'text-orange-500 fill-orange-500 animate-pulse' : 'text-slate-300 dark:text-slate-700'}`} />
+              <div className="flex flex-col">
+                <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest leading-none">Sequência</span>
+                <span className="text-sm font-black text-slate-900 dark:text-slate-100">{stats.streak} Dias</span>
+              </div>
+            </div>
+
             <button 
               onClick={() => { setEditingTask(null); setIsModalOpen(true); }}
               className={`flex items-center gap-3 px-8 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl transition-all active:scale-95 border
@@ -825,13 +820,10 @@ const App: React.FC = () => {
           </div>
 
           <div className="md:hidden flex items-center gap-2 ml-2">
-            <button 
-              onClick={() => { setEditingTask(null); setIsModalOpen(true); }}
-              className={`flex items-center gap-3 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg transition-all active:scale-95 border
-                ${!isTodaySelected ? 'bg-emerald-600 border-emerald-500' : 'bg-indigo-600 border-indigo-500'} text-white`}
-            >
-              {!isTodaySelected ? <CalendarClock className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-            </button>
+            <div className="flex items-center gap-1.5 bg-white dark:bg-slate-900 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800">
+               <Flame className={`w-4 h-4 ${stats.streak > 0 ? 'text-orange-500 fill-orange-500' : 'text-slate-300 dark:text-slate-700'}`} />
+               <span className="text-xs font-black text-slate-900 dark:text-slate-100">{stats.streak}</span>
+            </div>
           </div>
         </div>
 
@@ -974,6 +966,7 @@ const App: React.FC = () => {
           onClose={() => setViewingTask(null)} 
           onCancelRecurrence={cancelRecurrence}
           onDelete={deleteTask}
+          onToggleSubtask={toggleSubtask}
           onEdit={(task) => {
             setViewingTask(null);
             setEditingTask(task);
@@ -1143,6 +1136,18 @@ const TaskModal: React.FC<{task: any, onClose: any, onSave: any}> = ({ task, onC
   const [recurrenceEndDate, setRecurrenceEndDate] = useState<string>(
     task?.recurrenceEndDate ? new Date(task.recurrenceEndDate).toISOString().split('T')[0] : ''
   );
+  const [subtasks, setSubtasks] = useState<any[]>(task?.subtasks || []);
+  const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
+
+  const addSubtask = () => {
+    if (!newSubtaskTitle.trim()) return;
+    setSubtasks(prev => [...prev, { id: generateId(), title: newSubtaskTitle, isCompleted: false }]);
+    setNewSubtaskTitle('');
+  };
+
+  const removeSubtask = (id: string) => {
+    setSubtasks(prev => prev.filter(s => s.id !== id));
+  };
 
   const toggleDay = (day: number) => {
     setRecurrenceDays(prev => 
@@ -1169,6 +1174,7 @@ const TaskModal: React.FC<{task: any, onClose: any, onSave: any}> = ({ task, onC
             priority, 
             recurrence, 
             recurrenceDays,
+            subtasks,
             recurrenceEndDate: recurrenceEndDate ? new Date(recurrenceEndDate).getTime() : undefined 
           });
         }} className="p-6 md:p-10 space-y-6 md:space-y-8 overflow-y-auto custom-scrollbar">
@@ -1269,6 +1275,44 @@ const TaskModal: React.FC<{task: any, onClose: any, onSave: any}> = ({ task, onC
               </div>
             </div>
           )}
+
+          <div className="space-y-4">
+            <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest ml-2">Subtarefas (Checklist)</label>
+            <div className="space-y-3">
+              <div className="flex gap-2">
+                <input 
+                  type="text" 
+                  value={newSubtaskTitle} 
+                  onChange={(e) => setNewSubtaskTitle(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addSubtask())}
+                  placeholder="Adicionar item..."
+                  className="flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500/20"
+                />
+                <button 
+                  type="button"
+                  onClick={addSubtask}
+                  className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-500 transition-colors shadow-lg shadow-indigo-500/20"
+                >
+                  <Plus className="w-5 h-5" />
+                </button>
+              </div>
+              
+              <div className="space-y-2">
+                {subtasks.map(s => (
+                  <div key={s.id} className="flex items-center justify-between bg-slate-50 dark:bg-slate-950/50 p-3 rounded-xl border border-slate-100 dark:border-slate-800/50 group">
+                    <span className="text-xs font-medium text-slate-700 dark:text-slate-300">{s.title}</span>
+                    <button 
+                      type="button"
+                      onClick={() => removeSubtask(s.id)}
+                      className="p-1 text-slate-400 hover:text-rose-500 transition-colors opacity-0 group-hover:opacity-100"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
 
           <div className="space-y-4">
             <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest ml-2">Data Limite (Opcional)</label>

@@ -163,6 +163,23 @@ const TaskCard: React.FC<TaskCardProps> = React.memo(({ task, onEdit, onDelete, 
         </div>
       )}
 
+      {task.subtasks && task.subtasks.length > 0 && (
+        <div className="mb-4 relative z-10">
+          <div className="flex justify-between items-center mb-1.5">
+            <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Subtarefas</span>
+            <span className="text-[9px] font-black text-indigo-500">
+              {task.subtasks.filter(s => s.isCompleted).length}/{task.subtasks.length}
+            </span>
+          </div>
+          <div className="h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+            <div 
+              className="h-full bg-indigo-500 transition-all duration-500"
+              style={{ width: `${(task.subtasks.filter(s => s.isCompleted).length / task.subtasks.length) * 100}%` }}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Tags de Tempo Automáticas Mobile-optimized */}
       <div className="flex flex-wrap gap-1.5 mb-3 md:mb-4 relative z-10">
         {task.tags.filter(tag => tag.includes('em:')).map(tag => {
