@@ -38,17 +38,44 @@ const safeLocalStorageSet = (key: string, value: string) => {
 };
 
 const App: React.FC = () => {
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [theme, setTheme] = useState<'light' | 'dark'>('dark');
-  const [stats, setStats] = useState<UserStats>({ 
-    level: 1, 
-    xp: 0, 
-    totalXp: 0, 
-    tasksCompleted: 0, 
-    name: 'Usuário',
-    streak: 0, 
-    plantLevel: 0,
-    activeDays: [] 
+  const [tasks, setTasks] = useState<Task[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEY_TASKS);
+    try {
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      console.error("Failed to parse tasks:", e);
+      return [];
+    }
+  });
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    return (localStorage.getItem(STORAGE_KEY_THEME) as 'light' | 'dark') || 'dark';
+  });
+  const [stats, setStats] = useState<UserStats>(() => {
+    const saved = localStorage.getItem(STORAGE_KEY_STATS);
+    try {
+      return saved ? JSON.parse(saved) : { 
+        level: 1, 
+        xp: 0, 
+        totalXp: 0, 
+        tasksCompleted: 0, 
+        name: 'Usuário',
+        streak: 0, 
+        plantLevel: 0,
+        activeDays: [] 
+      };
+    } catch (e) {
+      console.error("Failed to parse stats:", e);
+      return { 
+        level: 1, 
+        xp: 0, 
+        totalXp: 0, 
+        tasksCompleted: 0, 
+        name: 'Usuário',
+        streak: 0, 
+        plantLevel: 0,
+        activeDays: [] 
+      };
+    }
   });
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
@@ -119,18 +146,7 @@ const App: React.FC = () => {
   }, [tasks, stats.lastPenaltyTimestamp]);
 
   useEffect(() => {
-    const savedTasks = localStorage.getItem(STORAGE_KEY_TASKS);
-    const savedStats = localStorage.getItem(STORAGE_KEY_STATS);
     const savedTheme = localStorage.getItem(STORAGE_KEY_THEME) as 'light' | 'dark' | null;
-    
-    try {
-      if (savedTasks) {
-        const parsedTasks: Task[] = JSON.parse(savedTasks);
-        setTasks(parsedTasks);
-      }
-    } catch (e) {
-      console.error("Failed to parse tasks:", e);
-    }
     
     if (savedTheme) {
       setTheme(savedTheme);
@@ -138,8 +154,9 @@ const App: React.FC = () => {
       setTheme('dark');
     }
 
-    try {
-      if (savedStats) {
+    const savedStats = localStorage.getItem(STORAGE_KEY_STATS);
+    if (savedStats) {
+      try {
         const parsedStats: UserStats = JSON.parse(savedStats);
         
         const now = new Date();
@@ -168,9 +185,9 @@ const App: React.FC = () => {
         }
         
         setStats(parsedStats);
+      } catch (e) {
+        console.error("Failed to parse stats:", e);
       }
-    } catch (e) {
-      console.error("Failed to parse stats:", e);
     }
   }, []);
 
