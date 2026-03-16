@@ -3,12 +3,6 @@ export type TaskStatus = 'todo' | 'in-progress' | 'done';
 export type Priority = 'low' | 'medium' | 'high';
 export type RecurrenceType = 'none' | 'daily' | 'weekly' | 'monthly';
 
-export interface SubTask {
-  id: string;
-  title: string;
-  isCompleted: boolean;
-}
-
 export interface Achievement {
   id: string;
   title: string;
@@ -28,7 +22,6 @@ export interface Task {
   order?: number;
   startedAt?: number;
   completedAt?: number;
-  subtasks?: SubTask[];
   // Recorrência
   recurrence?: RecurrenceType;
   recurrenceEndDate?: number;
@@ -45,8 +38,10 @@ export interface UserStats {
   bio?: string;
   achievements?: Achievement[];
   focusSessionsCompleted?: number;
-  // Sistema de Streak (Placeholder)
+  // Sistema de Streak
   streak: number;
+  plantLevel: number;
+  showStreakLoss?: boolean;
   lastActivityTimestamp?: number;
   lastPenaltyTimestamp?: number;
   activeDays?: string[]; // Array de strings formatadas "YYYY-MM-DD" para o calendário
