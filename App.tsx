@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback, Component } from 'react';
 import ReactDOM from 'react-dom';
 import { Plus, Search, Filter, X, Calendar as CalendarIcon, Repeat, CheckCircle, CalendarClock, Menu, ChevronLeft, ChevronRight, Trash2, AlertCircle, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -12,7 +12,8 @@ import TaskDetailModal from './components/TaskDetailModal';
 import ProfileModal from './components/ProfileModal';
 import { 
   auth, db, googleProvider, signInWithPopup, signOut, onAuthStateChanged, 
-  doc, getDoc, setDoc, onSnapshot, collection, query, where, getDocs, User
+  doc, getDoc, setDoc, onSnapshot, collection, query, where, getDocs, User,
+  handleFirestoreError, OperationType, deleteDoc
 } from './firebase';
 import { writeBatch } from 'firebase/firestore';
 
@@ -42,7 +43,7 @@ const safeLocalStorageSet = (key: string, value: string) => {
   }
 };
 
-const App: React.FC = () => {
+const AppContent: React.FC = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
   const [stats, setStats] = useState<UserStats>({ 
@@ -82,12 +83,24 @@ const App: React.FC = () => {
       await signInWithPopup(auth, googleProvider);
     } catch (error: any) {
       if (error.code === 'auth/popup-closed-by-user') {
-        // Silently ignore or log as info - user just closed the window
         console.info("Login popup closed by user.");
         return;
       }
+      if (error.code === 'auth/popup-blocked') {
+        addNotification('info', 'O popup foi bloqueado pelo navegador. Por favor, permita popups para este site.');
+        return;
+      }
+      if (error.code === 'auth/unauthorized-domain') {
+        addNotification('info', 'Este domínio não está autorizado no Firebase. Adicione-o nas configurações de autenticação.');
+        console.error("Unauthorized domain:", window.location.hostname);
+        return;
+      }
+      if (error.code === 'auth/operation-not-allowed') {
+        addNotification('info', 'O login com Google não está habilitado no console do Firebase.');
+        return;
+      }
       console.error("Login failed:", error);
-      addNotification('info', 'Falha no login. Tente novamente.');
+      addNotification('info', `Falha no login: ${error.message || 'Tente novamente.'}`);
     } finally {
       setIsSyncing(false);
     }
@@ -115,6 +128,7 @@ const App: React.FC = () => {
       
       if (currentUser) {
         setIsSyncing(true);
+        const path = `users/${currentUser.uid}`;
         try {
           // Verificar se existe dados no Firestore
           const statsDoc = await getDoc(doc(db, 'users', currentUser.uid));
@@ -145,7 +159,7 @@ const App: React.FC = () => {
             }
           }
         } catch (error) {
-          console.error("Error during initial sync:", error);
+          handleFirestoreError(error, OperationType.GET, path);
         } finally {
           setIsSyncing(false);
         }
@@ -159,15 +173,19 @@ const App: React.FC = () => {
     if (!user) return;
 
     // Listener para Stats
+    const statsPath = `users/${user.uid}`;
     const unsubscribeStats = onSnapshot(doc(db, 'users', user.uid), (doc) => {
       if (doc.exists()) {
         isSyncingFromCloud.current = true;
         setStats(doc.data() as UserStats);
         setTimeout(() => { isSyncingFromCloud.current = false; }, 100);
       }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, statsPath);
     });
 
     // Listener para Tasks
+    const tasksPath = `users/${user.uid}/tasks`;
     const unsubscribeTasks = onSnapshot(collection(db, 'users', user.uid, 'tasks'), (snapshot) => {
       isSyncingFromCloud.current = true;
       const cloudTasks: Task[] = [];
@@ -177,6 +195,8 @@ const App: React.FC = () => {
       // Ordenar por 'order'
       setTasks(cloudTasks.sort((a, b) => (a.order ?? 0) - (b.order ?? 0)));
       setTimeout(() => { isSyncingFromCloud.current = false; }, 100);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, tasksPath);
     });
 
     return () => {
@@ -190,10 +210,11 @@ const App: React.FC = () => {
     if (!user || isSyncingFromCloud.current) return;
 
     const syncStats = async () => {
+      const path = `users/${user.uid}`;
       try {
         await setDoc(doc(db, 'users', user.uid), stats, { merge: true });
       } catch (error) {
-        console.error("Error syncing stats:", error);
+        handleFirestoreError(error, OperationType.WRITE, path);
       }
     };
 
@@ -212,21 +233,21 @@ const App: React.FC = () => {
 
   const updateFirestoreTask = async (task: Task) => {
     if (!user) return;
+    const path = `users/${user.uid}/tasks/${task.id}`;
     try {
       await setDoc(doc(db, 'users', user.uid, 'tasks', task.id), task);
     } catch (error) {
-      console.error("Error updating task in firestore:", error);
+      handleFirestoreError(error, OperationType.WRITE, path);
     }
   };
 
   const deleteFirestoreTask = async (taskId: string) => {
     if (!user) return;
+    const path = `users/${user.uid}/tasks/${taskId}`;
     try {
-      // Import deleteDoc if needed
-      const { deleteDoc } = await import('firebase/firestore');
       await deleteDoc(doc(db, 'users', user.uid, 'tasks', taskId));
     } catch (error) {
-      console.error("Error deleting task in firestore:", error);
+      handleFirestoreError(error, OperationType.DELETE, path);
     }
   };
 
@@ -776,7 +797,9 @@ const App: React.FC = () => {
         finalTasks.forEach(t => {
           batch.set(doc(db, 'users', user.uid, 'tasks', t.id), t);
         });
-        batch.commit();
+        batch.commit().catch(error => {
+          handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}/tasks`);
+        });
       }
 
       return finalTasks;
@@ -1412,6 +1435,75 @@ const TaskModal: React.FC<{task: any, onClose: any, onSave: any}> = ({ task, onC
         </form>
       </div>
     </div>
+  );
+};
+
+// Componente de Error Boundary
+interface ErrorBoundaryProps {
+  children: React.ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: any;
+}
+
+class ErrorBoundary extends Component<any, any> {
+  constructor(props: any) {
+    super(props);
+    (this as any).state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: any, errorInfo: any) {
+    console.error("ErrorBoundary caught an error", error, errorInfo);
+  }
+
+  render() {
+    if ((this as any).state.hasError) {
+      let errorMessage = "Ocorreu um erro inesperado.";
+      try {
+        const parsedError = JSON.parse((this as any).state.error.message);
+        if (parsedError.error) {
+          errorMessage = `Erro no Firebase: ${parsedError.error} (${parsedError.operationType} em ${parsedError.path})`;
+        }
+      } catch (e) {
+        errorMessage = (this as any).state.error.message || errorMessage;
+      }
+
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-zinc-950 text-zinc-100 p-4">
+          <div className="max-w-md w-full bg-zinc-900 border border-zinc-800 rounded-2xl p-8 text-center shadow-2xl">
+            <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
+              <AlertCircle className="w-8 h-8 text-red-500" />
+            </div>
+            <h1 className="text-2xl font-bold mb-4">Ops! Algo deu errado</h1>
+            <p className="text-zinc-400 mb-8 leading-relaxed">
+              {errorMessage}
+            </p>
+            <button
+              onClick={() => window.location.reload()}
+              className="w-full py-3 bg-zinc-100 text-zinc-950 font-semibold rounded-xl hover:bg-white transition-colors"
+            >
+              Recarregar Aplicativo
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return (this as any).props.children;
+  }
+}
+
+const App: React.FC = () => {
+  return (
+    <ErrorBoundary>
+      <AppContent />
+    </ErrorBoundary>
   );
 };
 
