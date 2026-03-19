@@ -2,7 +2,6 @@
 import React, { useState } from 'react';
 import { ChevronLeft, ChevronRight, Clock, MoreHorizontal } from 'lucide-react';
 import { Task } from '../types';
-import { PRIORITY_CONFIG } from '../constants';
 
 interface CalendarViewProps {
   tasks: Task[];
@@ -112,7 +111,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, onTaskClick }) => {
                           onClick={() => onTaskClick(task)}
                           className="text-left px-2 py-1.5 rounded-lg bg-indigo-50/50 hover:bg-indigo-100/50 border border-indigo-100/30 transition-all flex items-center gap-2"
                         >
-                          <div className={`w-1.5 h-1.5 rounded-full ${PRIORITY_CONFIG[task.priority].color.split(' ')[0]}`} />
+                          <div className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
                           <span className="text-[10px] font-bold text-slate-700 truncate">{task.title}</span>
                         </button>
                       ))}

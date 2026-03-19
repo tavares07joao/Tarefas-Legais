@@ -2,7 +2,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Task } from '../types';
 import { Edit2, Trash2, Calendar, AlignLeft, AlertTriangle, PlayCircle, CheckCircle, Repeat } from 'lucide-react';
-import { PRIORITY_CONFIG } from '../constants';
 
 interface TaskCardProps {
   task: Task;
@@ -30,7 +29,6 @@ const TaskCard: React.FC<TaskCardProps> = React.memo(({ task, onEdit, onDelete, 
     }
   }, [task.status, task.completedAt]);
   
-  const priority = PRIORITY_CONFIG[task.priority];
   const dateStr = new Date(task.createdAt).toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
   const formattedDate = dateStr.charAt(0).toUpperCase() + dateStr.slice(1);
   
@@ -110,10 +108,6 @@ const TaskCard: React.FC<TaskCardProps> = React.memo(({ task, onEdit, onDelete, 
       )}
       <div className="flex justify-between items-start mb-3 md:mb-4 relative z-10">
         <div className="flex flex-wrap gap-1.5 md:gap-2">
-          <span className={`text-[8px] md:text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border flex items-center gap-1 md:gap-1.5 ${priority.color}`}>
-            {priority.icon}
-            {priority.label}
-          </span>
           {isDelayed && (
             <span className="text-[9px] md:text-[11px] font-black uppercase tracking-widest px-3.5 py-1.5 rounded-full bg-rose-600 text-white flex items-center gap-1.5 shadow-xl animate-pulse border border-rose-400/50">
               {isOverdue ? '💣' : <AlertTriangle className="w-3.5 h-3.5" />}
@@ -160,23 +154,6 @@ const TaskCard: React.FC<TaskCardProps> = React.memo(({ task, onEdit, onDelete, 
           <p className="text-[10px] md:text-[11px] text-slate-500 dark:text-slate-500 break-words leading-relaxed italic">
             {task.description}
           </p>
-        </div>
-      )}
-
-      {task.subtasks && task.subtasks.length > 0 && (
-        <div className="mb-4 relative z-10">
-          <div className="flex justify-between items-center mb-1.5">
-            <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Subtarefas</span>
-            <span className="text-[9px] font-black text-indigo-500">
-              {task.subtasks.filter(s => s.isCompleted).length}/{task.subtasks.length}
-            </span>
-          </div>
-          <div className="h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-            <div 
-              className="h-full bg-indigo-500 transition-all duration-500"
-              style={{ width: `${(task.subtasks.filter(s => s.isCompleted).length / task.subtasks.length) * 100}%` }}
-            />
-          </div>
         </div>
       )}
 

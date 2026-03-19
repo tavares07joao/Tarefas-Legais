@@ -5,16 +5,21 @@ import {
   ChevronUp, ChevronDown,
   ChevronLeft, ChevronRight,
   Volume2, VolumeX, Volume1,
-  Play, Pause, Settings, Flame, X, Music, Plus, Link as LinkIcon, Trash2, Repeat, CalendarClock
+  Play, Pause, Settings, X, Music, Music2, Plus, Link as LinkIcon, Trash2, Repeat, CalendarClock, Cloud, CloudOff,
+  MoreVertical, Sliders, Timer
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { UserStats, Task, MusicTrack } from '../types';
-import { NEXT_LEVEL_XP_BASE, FOCUS_TRACKS } from '../constants';
+import { NEXT_LEVEL_XP_BASE, FOCUS_TRACKS, PLANT_LEVELS } from '../constants';
 import MusicEmbed from './MusicEmbed';
+
+import { User as FirebaseUser } from 'firebase/auth';
 
 interface SidebarProps {
   stats: UserStats;
   tasks: Task[];
+  user: FirebaseUser | null;
+  isSyncing?: boolean;
   selectedDate: number | null;
   onDateSelect: (timestamp: number | null) => void;
   onFocusComplete: () => void;
@@ -23,7 +28,18 @@ interface SidebarProps {
   onCloseMobile?: () => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = React.memo(({ stats, tasks, selectedDate, onDateSelect, onFocusComplete, onEditProfile, onShowScheduled, onCloseMobile }) => {
+const Sidebar: React.FC<SidebarProps> = React.memo(({ 
+  stats, 
+  tasks, 
+  user,
+  isSyncing,
+  selectedDate, 
+  onDateSelect, 
+  onFocusComplete, 
+  onEditProfile, 
+  onShowScheduled, 
+  onCloseMobile 
+}) => {
   const xpNeeded = stats.level * NEXT_LEVEL_XP_BASE;
   const progressPercent = Math.min(100, (stats.xp / xpNeeded) * 100);
 
@@ -60,8 +76,7 @@ const Sidebar: React.FC<SidebarProps> = React.memo(({ stats, tasks, selectedDate
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const [customTracks, setCustomTracks] = useState<MusicTrack[]>([]);
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
-  const [showVolumeSlider, setShowVolumeSlider] = useState(false);
-  const [showTrackList, setShowTrackList] = useState(false);
+  const [showFocusMenu, setShowFocusMenu] = useState(false);
   const [showAddTrack, setShowAddTrack] = useState(false);
   const [newTrackUrl, setNewTrackUrl] = useState('');
   
@@ -270,9 +285,53 @@ const Sidebar: React.FC<SidebarProps> = React.memo(({ stats, tasks, selectedDate
            date.getFullYear() === currentYear;
   };
 
-  const isDateActive = (day: number) => {
-    const dateStr = `${currentYear}-${(currentMonth + 1).toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
-    return stats.activeDays?.includes(dateStr);
+  const getDayEmoji = (day: number) => {
+    const d = new Date(currentYear, currentMonth, day);
+    const dStr = `${currentYear}-${(currentMonth + 1).toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+    
+    // 🪦 - Quando o usuário perde a sequência
+    if (stats.streakLossDays?.includes(dStr)) return '🪦';
+
+    const startOfDay = new Date(currentYear, currentMonth, day, 0, 0, 0, 0).getTime();
+    const endOfDay = new Date(currentYear, currentMonth, day, 23, 59, 59, 999).getTime();
+
+    // Tarefas completadas NESTE dia
+    const completedOnDay = tasks.filter(t => t.completedAt && t.completedAt >= startOfDay && t.completedAt <= endOfDay).length;
+    
+    // Tarefas em atraso NO FINAL deste dia
+    // (Criadas ANTES deste dia e não completadas até o final deste dia)
+    // Isso evita mostrar atraso para tarefas criadas no próprio dia
+    const overdueOnDay = tasks.filter(t => {
+      const isOverdueAtEnd = t.createdAt < startOfDay && (!t.completedAt || t.completedAt > endOfDay);
+      const hasDelayedTag = t.tags?.includes('Atrasada') && t.createdAt <= endOfDay && (!t.completedAt || t.completedAt > endOfDay);
+      return isOverdueAtEnd || hasDelayedTag;
+    }).length;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const isFuture = d > today;
+
+    if (isFuture) return null;
+
+    // 🤬 - Quando o usuário termina o dia com mais de 5 tarefas em atraso real
+    if (overdueOnDay > 5) return '🤬';
+    
+    // 🥵 - Quando o usuário termina o dia com tarefas em atraso real
+    if (overdueOnDay > 0) return '🥵';
+    
+    // 🤯 - Quando o usuário termina o dia com mais de 10 tarefas completas
+    if (completedOnDay > 10) return '🤯';
+    
+    // 🫠 - Quando o usuário termina o dia com mais de 5 tarefas completas
+    if (completedOnDay > 5) return '🫠';
+    
+    // 😎 - Quando o usuário completa todas as tarefas do dia
+    // (Pelo menos uma tarefa existia e todas foram completadas)
+    const totalTasksOnDay = tasks.filter(t => t.createdAt <= endOfDay).length;
+    const pendingAtEndOfDay = tasks.filter(t => t.createdAt <= endOfDay && (!t.completedAt || t.completedAt > endOfDay)).length;
+    if (totalTasksOnDay > 0 && pendingAtEndOfDay === 0) return '😎';
+
+    return null;
   };
 
   const handleDayClick = (day: number) => {
@@ -311,11 +370,24 @@ const Sidebar: React.FC<SidebarProps> = React.memo(({ stats, tasks, selectedDate
                 {stats.level}
               </div>
             </div>
-            <div className="min-w-0">
-              <p className="font-black text-slate-900 dark:text-slate-100 text-base leading-tight truncate">{stats.name || "Usuário"}</p>
-              <div className="flex items-center gap-1.5 mt-1">
-                <Flame className="w-3 h-3 text-orange-500 fill-orange-500" />
-                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider">{stats.streak} Dias de Fogo</span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <p className="font-black text-slate-900 dark:text-slate-100 text-base leading-tight truncate">{stats.name || "Usuário"}</p>
+                {user ? (
+                  <div className="flex items-center gap-1 px-1.5 py-0.5 bg-emerald-100 dark:bg-emerald-950/30 rounded-md border border-emerald-200 dark:border-emerald-900/40">
+                    {isSyncing ? (
+                      <div className="w-2 h-2 border border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <Cloud className="w-2.5 h-2.5 text-emerald-500" />
+                    )}
+                    <span className="text-[8px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-tighter">Nuvem</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1 px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 rounded-md border border-slate-200 dark:border-slate-700">
+                    <CloudOff className="w-2.5 h-2.5 text-slate-400" />
+                    <span className="text-[8px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-tighter">Local</span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -380,7 +452,7 @@ const Sidebar: React.FC<SidebarProps> = React.memo(({ stats, tasks, selectedDate
                const isSunday = d.getDay() === 0;
                const isToday = day === today.getDate() && currentMonth === today.getMonth() && currentYear === today.getFullYear();
                const selected = isDateSelected(day);
-               const active = isDateActive(day);
+               const emoji = getDayEmoji(day);
 
                return (
                   <button 
@@ -390,11 +462,11 @@ const Sidebar: React.FC<SidebarProps> = React.memo(({ stats, tasks, selectedDate
                       ${selected ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200 dark:shadow-indigo-900/40' : isToday ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 border border-transparent hover:border-slate-200 dark:hover:border-slate-700'}`}
                   >
                     {day}
-                    {isSunday && !active && (
+                    {isSunday && !emoji && (
                       <span className="absolute -top-1 -right-1 text-[8px] opacity-40">💤</span>
                     )}
-                    {active && (
-                      <Flame className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 text-orange-500 fill-orange-500 animate-pulse" />
+                    {emoji && (
+                      <span className="absolute -top-1.5 -right-1.5 text-[10px] animate-pulse">{emoji}</span>
                     )}
                   </button>
                );
@@ -402,181 +474,205 @@ const Sidebar: React.FC<SidebarProps> = React.memo(({ stats, tasks, selectedDate
           </div>
         </div>
 
-        {/* Foco Widget Card */}
-        <div className="bg-white dark:bg-slate-900 rounded-[2rem] border border-slate-200 dark:border-slate-800 shadow-sm relative transition-all duration-300">
-           <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 rounded-full -mr-12 -mt-12 blur-2xl" />
-           
-           <div className="p-5">
-             <div className="flex items-center justify-between mb-4">
-                <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Modo Foco</span>
-                <div className="flex items-center gap-1.5">
-                  <div className={`w-2 h-2 rounded-full ${isActive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300 dark:bg-slate-700'}`} />
-                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{isActive ? 'Ativo' : 'Ocioso'}</span>
-                </div>
-             </div>
+        {/* Sequência (Planta) Card */}
+        <div className="bg-white dark:bg-slate-900 rounded-[2rem] p-5 border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden group">
+          <div className="absolute top-0 right-0 w-20 h-20 bg-emerald-500/5 rounded-full -mr-10 -mt-10 blur-2xl group-hover:bg-emerald-500/10 transition-colors duration-500" />
+          <div className="flex flex-col items-center text-center relative">
+            <div className="w-full flex items-center justify-between mb-6">
+              <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Sua Planta</span>
+              <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-800/50 px-2 py-1 rounded-full border border-slate-100 dark:border-slate-800">
+                <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 tabular-nums">{stats.streak}</span>
+                <span className="text-[8px] font-bold text-slate-400 dark:text-slate-500 uppercase">Dias</span>
+              </div>
+            </div>
+            
+            <div className="relative mb-6">
+              <div className="absolute inset-0 bg-emerald-500/10 blur-3xl rounded-full scale-150" />
+              <span className="text-6xl relative z-10 transition-transform group-hover:scale-110 duration-500 block">
+                {stats.streakLost ? '🍃' : (PLANT_LEVELS.find(p => p.level === stats.level)?.emoji || '🌱')}
+              </span>
+            </div>
+            <div className="w-full">
+              <p className="text-[9px] text-slate-400 dark:text-slate-500 font-medium leading-tight italic">
+                {stats.streakLost 
+                  ? 'Não desista! Comece uma nova sequência hoje.' 
+                  : 'Continue cuidando da sua sequência para sua planta continuar crescendo.'}
+              </p>
+            </div>
+          </div>
+        </div>
 
-             <div className="flex items-center gap-4 mb-5">
-                <div className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-950 overflow-hidden relative border border-slate-200 dark:border-slate-800 flex-shrink-0 shadow-inner">
+        {/* Foco Widget Card - Minimalist Mini-Player */}
+        <div className="bg-white dark:bg-slate-900 rounded-[2rem] border border-slate-200 dark:border-slate-800 shadow-sm relative transition-all duration-300 overflow-hidden">
+           <div className="p-3">
+             <div className="flex items-center gap-3">
+                {/* GIF/Icon Section */}
+                <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-950 overflow-hidden relative border border-slate-200 dark:border-slate-800 flex-shrink-0 shadow-inner">
                    <img 
                       src="https://media1.giphy.com/media/v1.Y2lkPTc5MGI3NjExbmZoaGJ6a2h5eGZtamF5MTU3YXRrMmoxd2Vxc3RvM3Vyc3VkeXp1ZSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/0UnQvd0HLMK5MLziSK/giphy.gif" 
                       className={`w-full h-full object-cover transition-all duration-700 ${isActive ? 'opacity-100 scale-110' : 'opacity-20 grayscale scale-100'}`}
                       alt="Focus"
                    />
                 </div>
+
+                {/* Timer Section */}
                 <div className="flex-1 min-w-0">
-                   <div className="flex items-center justify-between mb-1">
-                      <div className="flex items-center gap-1">
-                        <button 
-                          onClick={() => {
-                            setShowTrackList(!showTrackList);
-                            setShowVolumeSlider(false);
-                          }}
-                          className={`p-1.5 rounded-lg transition-all ${showTrackList ? 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400' : 'text-slate-400 hover:text-indigo-500 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
-                          title="Mudar Trilha"
-                        >
-                          <Music className="w-3.5 h-3.5" />
-                        </button>
-                        <button 
-                          onClick={() => {
-                            setShowVolumeSlider(!showVolumeSlider);
-                            setShowTrackList(false);
-                          }}
-                          className={`p-1.5 rounded-lg transition-all ${showVolumeSlider ? 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400' : 'text-slate-400 hover:text-indigo-500 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
-                          title="Ajustar Volume"
-                        >
-                          {isMuted || volume === 0 ? <VolumeX className="w-3.5 h-3.5" /> : volume < 50 ? <Volume1 className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
-                        </button>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        {!isActive && (
-                          <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-950 px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-800">
-                            <button onClick={() => changeDuration(-10)} className="hover:text-indigo-600 text-slate-300 dark:text-slate-700 transition-colors"><ChevronDown className="w-3 h-3" /></button>
-                            <span className="text-[10px] font-black text-slate-400 dark:text-slate-600 tabular-nums">{duration}m</span>
-                            <button onClick={() => changeDuration(10)} className="hover:text-indigo-600 text-slate-300 dark:text-slate-700 transition-colors"><ChevronUp className="w-3 h-3" /></button>
-                          </div>
-                        )}
-                      </div>
-                   </div>
                    <div className="flex flex-col">
-                     <span className="text-2xl font-mono font-black text-slate-900 dark:text-slate-100 tabular-nums leading-none">
+                     <span className="text-xl font-mono font-black text-slate-900 dark:text-slate-100 tabular-nums leading-none tracking-tighter">
                        {Math.floor(timeLeft / 60).toString().padStart(2, '0')}:{(timeLeft % 60).toString().padStart(2, '0')}
                      </span>
-                     <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider truncate mt-1">
-                       {currentTrack.name}
-                     </span>
+                     {isActive && (
+                       <span className="text-[8px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider truncate mt-1 flex items-center gap-1">
+                         <Music2 className="w-2 h-2" />
+                         {currentTrack.name}
+                       </span>
+                     )}
                    </div>
+                </div>
+
+                {/* Controls */}
+                <div className="flex items-center gap-1">
+                  <button 
+                    onClick={toggleTimer}
+                    className={`p-2 rounded-xl transition-all active:scale-90 ${isActive ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400' : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-md shadow-indigo-200 dark:shadow-none'}`}
+                  >
+                    {isActive ? <Pause className="w-4 h-4" fill="currentColor" /> : <Play className="w-4 h-4" fill="currentColor" />}
+                  </button>
+                  <button 
+                    onClick={() => setShowFocusMenu(!showFocusMenu)}
+                    className={`p-2 rounded-xl transition-all ${showFocusMenu ? 'bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white' : 'text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+                  >
+                    <MoreVertical className="w-4 h-4" />
+                  </button>
                 </div>
              </div>
 
-             {/* Seção de Volume Expansível */}
-             {showVolumeSlider && (
-               <div className="mb-5 p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-100 dark:border-slate-800 animate-in slide-in-from-top-2 duration-300">
-                 <div className="flex items-center gap-4">
-                   <div className="flex-1">
-                     <div className="flex justify-between mb-2">
-                       <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Volume</span>
-                       <span className="text-[9px] font-black text-indigo-600 dark:text-indigo-400 tabular-nums">{volume}%</span>
-                     </div>
-                     <input 
-                        type="range" 
-                        min="0" 
-                        max="100" 
-                        value={volume} 
-                        onChange={(e) => setVolume(parseInt(e.target.value))}
-                        className="w-full h-1.5 accent-indigo-500 cursor-pointer appearance-none bg-slate-200 dark:bg-slate-800 rounded-full"
-                      />
-                   </div>
-                   <button 
-                    onClick={() => setIsMuted(!isMuted)}
-                    className={`p-2 rounded-xl transition-colors ${isMuted ? 'bg-rose-100 text-rose-600 dark:bg-rose-900/30' : 'bg-white dark:bg-slate-800 text-slate-400'}`}
-                   >
-                    {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-                   </button>
-                 </div>
-               </div>
-             )}
-
-             {/* Seção de Playlist Expansível */}
-             {showTrackList && (
-               <div className="mb-5 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-100 dark:border-slate-800 overflow-hidden animate-in slide-in-from-top-2 duration-300">
-                  <div className="p-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Playlist</span>
-                    <button 
-                      onClick={() => setShowAddTrack(!showAddTrack)}
-                      className="p-1 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-lg transition-colors"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-
-                  {showAddTrack && (
-                    <div className="p-3 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 space-y-2">
-                      <div className="relative">
-                        <LinkIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400" />
-                        <input 
-                          type="text" 
-                          placeholder="URL do YouTube..." 
-                          value={newTrackUrl}
-                          onChange={(e) => setNewTrackUrl(e.target.value)}
-                          className="w-full pl-8 pr-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-[10px] focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-                        />
-                      </div>
-                      <button 
-                        onClick={handleAddTrack}
-                        className="w-full py-2 bg-indigo-600 text-white rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-indigo-700 transition-colors"
-                      >
-                        Adicionar
-                      </button>
-                    </div>
-                  )}
-
-                  <div className="max-h-48 overflow-y-auto custom-scrollbar">
-                    {allTracks.map((track, idx) => (
-                      <button
-                        key={track.id}
-                        onClick={() => {
-                          setCurrentTrackIndex(idx);
-                          setShowTrackList(false);
-                        }}
-                        className={`w-full text-left px-3 py-2.5 hover:bg-white dark:hover:bg-slate-800 transition-colors flex items-center justify-between group/item ${currentTrackIndex === idx ? 'bg-indigo-50/50 dark:bg-indigo-900/20' : ''}`}
-                      >
-                        <div className="flex flex-col gap-0.5 min-w-0">
-                          <span className={`text-[10px] font-bold truncate ${currentTrackIndex === idx ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-700 dark:text-slate-200'}`}>
-                            {track.name}
-                          </span>
+             <AnimatePresence>
+               {showFocusMenu && (
+                 <motion.div 
+                   initial={{ height: 0, opacity: 0 }}
+                   animate={{ height: 'auto', opacity: 1 }}
+                   exit={{ height: 0, opacity: 0 }}
+                   className="overflow-hidden"
+                 >
+                   <div className="mt-3 p-3 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-100 dark:border-slate-800 space-y-3">
+                     {/* Duration & Reset */}
+                     <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Timer className="w-3 h-3 text-slate-400" />
+                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Duração</span>
                         </div>
-                        {idx >= FOCUS_TRACKS.length && (
-                          <button 
-                            onClick={(e) => removeTrack(track.id, e)}
-                            className="p-1.5 opacity-0 group-hover/item:opacity-100 hover:bg-rose-100 dark:hover:bg-rose-900/30 text-rose-500 rounded-lg transition-all"
-                          >
-                            <Trash2 className="w-3 h-3" />
+                        <div className="flex items-center gap-2">
+                          {!isActive && (
+                            <div className="flex items-center gap-1 bg-white dark:bg-slate-900 px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-800">
+                              <button onClick={() => changeDuration(-10)} className="hover:text-indigo-600 text-slate-300 dark:text-slate-700 transition-colors"><ChevronDown className="w-3 h-3" /></button>
+                              <span className="text-[9px] font-black text-slate-600 dark:text-slate-400 tabular-nums">{duration}m</span>
+                              <button onClick={() => changeDuration(10)} className="hover:text-indigo-600 text-slate-300 dark:text-slate-700 transition-colors"><ChevronUp className="w-3 h-3" /></button>
+                            </div>
+                          )}
+                          <button onClick={resetTimer} className="p-1.5 bg-white dark:bg-slate-900 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg text-slate-400 hover:text-rose-500 border border-slate-200 dark:border-slate-800 transition-colors">
+                            <RotateCcw className="w-3 h-3" />
                           </button>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-               </div>
-             )}
+                        </div>
+                     </div>
+
+                     <div className="h-px bg-slate-200 dark:bg-slate-800 mx-1" />
+
+                     {/* Volume */}
+                     <div className="space-y-2">
+                       <div className="flex justify-between items-center">
+                         <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                           <Sliders className="w-3 h-3" /> Volume
+                         </span>
+                         <span className="text-[9px] font-black text-indigo-600 dark:text-indigo-400 tabular-nums">{volume}%</span>
+                       </div>
+                       <div className="flex items-center gap-3">
+                         <button 
+                           onClick={() => setIsMuted(!isMuted)}
+                           className={`p-1.5 rounded-lg transition-colors ${isMuted ? 'text-rose-500' : 'text-slate-400'}`}
+                         >
+                           {isMuted || volume === 0 ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
+                         </button>
+                         <input 
+                            type="range" 
+                            min="0" 
+                            max="100" 
+                            value={volume} 
+                            onChange={(e) => setVolume(parseInt(e.target.value))}
+                            className="flex-1 h-1 accent-indigo-500 cursor-pointer appearance-none bg-slate-200 dark:bg-slate-800 rounded-full"
+                          />
+                       </div>
+                     </div>
+
+                     {/* Playlist */}
+                     <div className="space-y-2">
+                       <div className="flex items-center justify-between">
+                         <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                           <Music className="w-3 h-3" /> Playlist
+                         </span>
+                         <button 
+                           onClick={() => setShowAddTrack(!showAddTrack)}
+                           className={`p-1 rounded-lg transition-colors ${showAddTrack ? 'bg-indigo-600 text-white' : 'text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30'}`}
+                         >
+                           <Plus className="w-3 h-3" />
+                         </button>
+                       </div>
+
+                       {showAddTrack && (
+                         <div className="p-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 space-y-2 animate-in zoom-in-95 duration-200">
+                           <div className="relative">
+                             <LinkIcon className="absolute left-2 top-1/2 -translate-y-1/2 w-2.5 h-2.5 text-slate-400" />
+                             <input 
+                               type="text" 
+                               placeholder="URL do YouTube..." 
+                               value={newTrackUrl}
+                               onChange={(e) => setNewTrackUrl(e.target.value)}
+                               className="w-full pl-7 pr-2 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-lg text-[9px] focus:outline-none"
+                             />
+                           </div>
+                           <button 
+                             onClick={handleAddTrack}
+                             className="w-full py-1.5 bg-indigo-600 text-white rounded-lg text-[8px] font-black uppercase tracking-widest hover:bg-indigo-700 transition-colors"
+                           >
+                             Adicionar
+                           </button>
+                         </div>
+                       )}
+
+                       <div className="max-h-32 overflow-y-auto custom-scrollbar space-y-1 pr-1">
+                         {allTracks.map((track, idx) => (
+                           <button
+                             key={track.id}
+                             onClick={() => setCurrentTrackIndex(idx)}
+                             className={`w-full text-left px-3 py-2 rounded-xl transition-all flex items-center justify-between group/item ${currentTrackIndex === idx ? 'bg-indigo-600 text-white shadow-md' : 'hover:bg-white dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300'}`}
+                           >
+                             <span className="text-[9px] font-bold truncate flex-1">
+                               {track.name}
+                             </span>
+                             {idx >= FOCUS_TRACKS.length && (
+                               <button 
+                                 onClick={(e) => removeTrack(track.id, e)}
+                                 className={`p-1 rounded-lg transition-all ${currentTrackIndex === idx ? 'text-white/60 hover:text-white hover:bg-white/10' : 'opacity-0 group-hover/item:opacity-100 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/30'}`}
+                               >
+                                 <Trash2 className="w-2.5 h-2.5" />
+                               </button>
+                             )}
+                           </button>
+                         ))}
+                       </div>
+                     </div>
+                   </div>
+                 </motion.div>
+               )}
+             </AnimatePresence>
 
              <MusicEmbed track={currentTrack} isActive={isActive} volume={volume} />
-
-             <div className="flex gap-2.5">
-                <button 
-                  onClick={toggleTimer}
-                  className={`flex-1 py-3.5 rounded-2xl font-black text-[11px] uppercase tracking-widest transition-all active:scale-95 shadow-lg ${isActive ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 shadow-amber-100 dark:shadow-none' : 'bg-indigo-600 text-white shadow-indigo-200 dark:shadow-none hover:bg-indigo-700'}`}
-                >
-                  {isActive ? 'Pausar' : 'Focar Agora'}
-                </button>
-                <button onClick={resetTimer} className="p-3.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-2xl text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-slate-700 transition-colors">
-                  <RotateCcw className="w-4.5 h-4.5" />
-                </button>
-             </div>
            </div>
         </div>
+
         <div className="mt-auto p-6 flex justify-center">
           <span className="text-[10px] font-black text-slate-300 dark:text-slate-700 uppercase tracking-[0.3em] select-none">
-            v.b1.02
+            v.B2.00
           </span>
         </div>
       </div>

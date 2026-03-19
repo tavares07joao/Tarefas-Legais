@@ -1,15 +1,20 @@
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import ReactDOM from 'react-dom';
-import { Plus, Search, Filter, X, Calendar as CalendarIcon, Repeat, CheckCircle, Flame, CalendarClock, Menu, ChevronLeft, ChevronRight, Trash2, AlertCircle } from 'lucide-react';
+import { Plus, Search, Filter, X, Calendar as CalendarIcon, Repeat, CheckCircle, CalendarClock, Menu, ChevronLeft, ChevronRight, Trash2, AlertCircle, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
-import { Task, UserStats, TaskStatus, Priority, RecurrenceType } from './types';
-import { STATUS_CONFIG, XP_PER_TASK, NEXT_LEVEL_XP_BASE, PRIORITY_CONFIG, ACHIEVEMENTS } from './constants';
+import { Task, UserStats, TaskStatus, RecurrenceType } from './types';
+import { STATUS_CONFIG, XP_PER_TASK, NEXT_LEVEL_XP_BASE } from './constants';
 import Sidebar from './components/Sidebar';
 import TaskCard from './components/TaskCard';
 import TaskDetailModal from './components/TaskDetailModal';
 import ProfileModal from './components/ProfileModal';
+import { 
+  auth, db, googleProvider, signInWithPopup, signOut, onAuthStateChanged, 
+  doc, getDoc, setDoc, onSnapshot, collection, query, where, getDocs, User
+} from './firebase';
+import { writeBatch } from 'firebase/firestore';
 
 const STORAGE_KEY_TASKS = 'gamified-task-master-tasks';
 const STORAGE_KEY_STATS = 'gamified-task-master-stats';
@@ -49,6 +54,10 @@ const App: React.FC = () => {
     streak: 0, 
     activeDays: [] 
   });
+  const [user, setUser] = useState<User | null>(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const isSyncingFromCloud = useRef(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isScheduledModalOpen, setIsScheduledModalOpen] = useState(false);
@@ -60,13 +69,166 @@ const App: React.FC = () => {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [viewingTask, setViewingTask] = useState<Task | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [selectedDate, setSelectedDate] = useState<number | null>(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
     return d.getTime();
   });
   
-  const searchInputRef = useRef<HTMLInputElement>(null);
+  const handleLogin = async () => {
+    try {
+      setIsSyncing(true);
+      await signInWithPopup(auth, googleProvider);
+    } catch (error: any) {
+      if (error.code === 'auth/popup-closed-by-user') {
+        // Silently ignore or log as info - user just closed the window
+        console.info("Login popup closed by user.");
+        return;
+      }
+      console.error("Login failed:", error);
+      addNotification('info', 'Falha no login. Tente novamente.');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      setIsSyncing(true);
+      await signOut(auth);
+      setUser(null);
+      // Opcional: Limpar estado local ou manter?
+      // O usuário pediu para não perder progresso, então manter local é seguro.
+    } catch (error) {
+      console.error("Logout failed:", error);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Monitorar estado de autenticação
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      setUser(currentUser);
+      setIsAuthReady(true);
+      
+      if (currentUser) {
+        setIsSyncing(true);
+        try {
+          // Verificar se existe dados no Firestore
+          const statsDoc = await getDoc(doc(db, 'users', currentUser.uid));
+          
+          if (!statsDoc.exists()) {
+            // Migrar dados locais para o Firestore no primeiro login
+            const localTasks = JSON.parse(localStorage.getItem(STORAGE_KEY_TASKS) || '[]');
+            const localStats = JSON.parse(localStorage.getItem(STORAGE_KEY_STATS) || '{}');
+            
+            if (localTasks.length > 0 || Object.keys(localStats).length > 0) {
+              const batch = writeBatch(db);
+              
+              // Salvar stats
+              batch.set(doc(db, 'users', currentUser.uid), {
+                ...stats,
+                ...localStats,
+                name: currentUser.displayName || stats.name,
+                avatarUrl: currentUser.photoURL || stats.avatarUrl
+              });
+              
+              // Salvar tasks
+              localTasks.forEach((task: Task) => {
+                batch.set(doc(db, 'users', currentUser.uid, 'tasks', task.id), task);
+              });
+              
+              await batch.commit();
+              addNotification('info', 'Progresso sincronizado com a nuvem!');
+            }
+          }
+        } catch (error) {
+          console.error("Error during initial sync:", error);
+        } finally {
+          setIsSyncing(false);
+        }
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Listeners em tempo real para Firestore
+  useEffect(() => {
+    if (!user) return;
+
+    // Listener para Stats
+    const unsubscribeStats = onSnapshot(doc(db, 'users', user.uid), (doc) => {
+      if (doc.exists()) {
+        isSyncingFromCloud.current = true;
+        setStats(doc.data() as UserStats);
+        setTimeout(() => { isSyncingFromCloud.current = false; }, 100);
+      }
+    });
+
+    // Listener para Tasks
+    const unsubscribeTasks = onSnapshot(collection(db, 'users', user.uid, 'tasks'), (snapshot) => {
+      isSyncingFromCloud.current = true;
+      const cloudTasks: Task[] = [];
+      snapshot.forEach((doc) => {
+        cloudTasks.push(doc.data() as Task);
+      });
+      // Ordenar por 'order'
+      setTasks(cloudTasks.sort((a, b) => (a.order ?? 0) - (b.order ?? 0)));
+      setTimeout(() => { isSyncingFromCloud.current = false; }, 100);
+    });
+
+    return () => {
+      unsubscribeStats();
+      unsubscribeTasks();
+    };
+  }, [user]);
+
+  // Sincronizar mudanças locais para o Firestore
+  useEffect(() => {
+    if (!user || isSyncingFromCloud.current) return;
+
+    const syncStats = async () => {
+      try {
+        await setDoc(doc(db, 'users', user.uid), stats, { merge: true });
+      } catch (error) {
+        console.error("Error syncing stats:", error);
+      }
+    };
+
+    const timer = setTimeout(syncStats, 1000); // Debounce
+    return () => clearTimeout(timer);
+  }, [stats, user]);
+
+  // Para tasks, como são muitas, é melhor atualizar individualmente nas funções de ação
+  // Mas para garantir, vamos usar um efeito para a lista completa se necessário (por exemplo, reordenação)
+  useEffect(() => {
+    if (!user || isSyncingFromCloud.current) return;
+
+    // Sincronizar ordens se mudarem drasticamente ou em lote
+    // Mas para performance, vamos focar em atualizações pontuais nas funções.
+  }, [tasks, user]);
+
+  const updateFirestoreTask = async (task: Task) => {
+    if (!user) return;
+    try {
+      await setDoc(doc(db, 'users', user.uid, 'tasks', task.id), task);
+    } catch (error) {
+      console.error("Error updating task in firestore:", error);
+    }
+  };
+
+  const deleteFirestoreTask = async (taskId: string) => {
+    if (!user) return;
+    try {
+      // Import deleteDoc if needed
+      const { deleteDoc } = await import('firebase/firestore');
+      await deleteDoc(doc(db, 'users', user.uid, 'tasks', taskId));
+    } catch (error) {
+      console.error("Error deleting task in firestore:", error);
+    }
+  };
 
   // Estados para Mobile e Interação
   const [activeTab, setActiveTab] = useState<TaskStatus>('todo');
@@ -157,7 +319,22 @@ const App: React.FC = () => {
             const sundayTodayGrace = (diffInDays === 1 && isSunday);
             
             if (!skipSundayGrace && !sundayTodayGrace) {
-              parsedStats.streak = 0;
+              // Nova lógica: volta um nível em vez de zerar
+              const newStreak = Math.max(0, (parsedStats.streak || 0) - 1);
+              if (newStreak < (parsedStats.streak || 0)) {
+                parsedStats.streak = newStreak;
+                parsedStats.streakLost = true; // Flag para mostrar 🍃
+                
+                // Adiciona os dias perdidos
+                const lossDays = parsedStats.streakLossDays || [];
+                for (let i = 1; i < diffInDays; i++) {
+                  const d = new Date(lastActivity.getTime());
+                  d.setDate(d.getDate() + i);
+                  const dStr = getLocalDateString(d);
+                  if (!lossDays.includes(dStr)) lossDays.push(dStr);
+                }
+                parsedStats.streakLossDays = lossDays;
+              }
             }
           }
         }
@@ -226,17 +403,20 @@ const App: React.FC = () => {
         const dayBeforeYesterdayStr = getLocalDateString(dayBeforeYesterday);
 
         if (lastActivityDate === yesterdayStr) {
-          newStreak += 1;
+          newStreak = Math.min(8, newStreak + 1); // Máximo nível 8
         } else if (today.getDay() === 1 && lastActivityDate === dayBeforeYesterdayStr) {
-          newStreak += 1;
+          newStreak = Math.min(8, newStreak + 1);
         } else if (lastActivityDate !== todayStr) {
-          newStreak = 1;
+          // Se passou mais de um dia, a lógica de "voltar nível" já deve ter rodado no carregamento
+          // Mas se estamos aqui e não é hoje nem ontem, garantimos o nível 1
+          if (newStreak === 0) newStreak = 1;
         }
       }
 
       return {
         ...prev,
         streak: newStreak,
+        streakLost: false, // Recuperou a sequência ou manteve
         lastActivityTimestamp: now,
         activeDays: hasAlreadyActedToday ? activeDays : [...activeDays, todayStr]
       };
@@ -277,32 +457,10 @@ const App: React.FC = () => {
   }, [updateActivity]);
 
   useEffect(() => {
-    const checkAchievements = () => {
-      const unlockedIds = (stats.achievements || []).map(a => a.id);
-      const toUnlock: string[] = [];
-
-      if (stats.tasksCompleted >= 1 && !unlockedIds.includes('first-task')) toUnlock.push('first-task');
-      if (stats.streak >= 3 && !unlockedIds.includes('streak-3')) toUnlock.push('streak-3');
-      if (stats.level >= 5 && !unlockedIds.includes('level-5')) toUnlock.push('level-5');
-      if ((stats.focusSessionsCompleted || 0) >= 5 && !unlockedIds.includes('focus-master')) toUnlock.push('focus-master');
-
-      if (toUnlock.length > 0) {
-        const newAchievements = [...(stats.achievements || [])];
-        toUnlock.forEach(id => {
-          const achievement = ACHIEVEMENTS.find(a => a.id === id);
-          if (achievement) {
-            newAchievements.push({ ...achievement, unlockedAt: Date.now() });
-            addNotification('info', `Conquista Desbloqueada: ${achievement.title}!`, 100);
-            grantXp(100, false); // Bônus por conquista
-          }
-        });
-        setStats(prev => ({ ...prev, achievements: newAchievements }));
-      }
-    };
-
-    const timer = setTimeout(checkAchievements, 1000);
-    return () => clearTimeout(timer);
-  }, [stats.tasksCompleted, stats.streak, stats.level, stats.focusSessionsCompleted, addNotification, grantXp]);
+    if (stats.streakLost) {
+      addNotification('info', 'Você perdeu sua sequência, sua planta voltou em um nível...');
+    }
+  }, [stats.streakLost, addNotification]);
 
   const applyPenalty = useCallback((amount: number) => {
     setStats(prev => {
@@ -327,26 +485,6 @@ const App: React.FC = () => {
     });
   }, []);
 
-  const toggleSubtask = useCallback((taskId: string, subtaskId: string) => {
-    setTasks(prev => prev.map(task => {
-      if (task.id === taskId && task.subtasks) {
-        const newSubtasks = task.subtasks.map(s => 
-          s.id === subtaskId ? { ...s, isCompleted: !s.isCompleted } : s
-        );
-        
-        // Se todas as subtarefas forem concluídas, podemos dar um bônus de XP ou sugerir concluir a tarefa
-        const allCompleted = newSubtasks.every(s => s.isCompleted);
-        if (allCompleted && !task.subtasks.every(s => s.isCompleted)) {
-          addNotification('info', 'Todas as subtarefas concluídas! +5 XP', 5);
-          grantXp(5, false);
-        }
-
-        return { ...task, subtasks: newSubtasks };
-      }
-      return task;
-    }));
-  }, [grantXp, addNotification]);
-
   const updateProfile = (data: Partial<UserStats>) => {
     setStats(prev => ({ ...prev, ...data }));
   };
@@ -366,16 +504,15 @@ const App: React.FC = () => {
       title: data.title || 'Sem título',
       description: data.description || '',
       status: 'todo',
-      priority: data.priority || 'medium',
       tags: [],
       createdAt: taskTimestamp,
       recurrence: data.recurrence || 'none',
       recurrenceEndDate: data.recurrenceEndDate,
       recurrenceDays: data.recurrenceDays,
-      subtasks: data.subtasks || [],
       order: tasks.length
     };
     setTasks([...tasks, newTask]);
+    updateFirestoreTask(newTask);
     setIsModalOpen(false);
     addNotification('info', `Tarefa lançada: ${newTask.title}`);
     
@@ -409,7 +546,6 @@ const App: React.FC = () => {
           let newTags = [...(updates.tags || t.tags)];
           let newStartedAt = updates.startedAt || t.startedAt;
           let newCompletedAt = updates.completedAt || t.completedAt;
-          let newSubtasks = updates.subtasks || t.subtasks;
 
           if (t.status !== 'in-progress' && updates.status === 'in-progress') {
             newStartedAt = Date.now();
@@ -425,7 +561,7 @@ const App: React.FC = () => {
             newTags = newTags.filter(tag => !tag.startsWith('Terminado em:'));
             newTags.push(finishTag);
             newTags = newTags.filter(tag => tag !== 'Atrasada');
-            grantXp(XP_PER_TASK[t.priority]);
+            grantXp(XP_PER_TASK);
 
             // Lógica de Recorrência: Criar próxima instância
             if (t.recurrence && t.recurrence !== 'none') {
@@ -474,7 +610,6 @@ const App: React.FC = () => {
                     startedAt: undefined,
                     completedAt: undefined,
                     tags: [],
-                    subtasks: t.subtasks?.map(s => ({ ...s, isCompleted: false }))
                   };
                   setTasks(currentTasks => {
                     // Evitar duplicatas se o usuário clicar rápido ou houver lag
@@ -482,6 +617,7 @@ const App: React.FC = () => {
                       return currentTasks;
                     }
                     addNotification('info', `Nova jornada: ${nextTask.title}`);
+                    updateFirestoreTask(nextTask);
                     return [...currentTasks, nextTask];
                   });
                 }, 500);
@@ -494,7 +630,9 @@ const App: React.FC = () => {
             newTags = newTags.filter(tag => !tag.startsWith('Terminado em:'));
           }
 
-          return { ...t, ...updates, tags: newTags, startedAt: newStartedAt, completedAt: newCompletedAt };
+          const updated = { ...t, ...updates, tags: newTags, startedAt: newStartedAt, completedAt: newCompletedAt };
+          updateFirestoreTask(updated);
+          return updated;
         }
         return t;
       });
@@ -505,11 +643,18 @@ const App: React.FC = () => {
   }, [grantXp, updateActivity]);
 
   const cancelRecurrence = useCallback((taskId: string) => {
-    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, recurrence: 'none' as RecurrenceType } : t));
+    setTasks(prev => prev.map(t => {
+      if (t.id === taskId) {
+        const updated = { ...t, recurrence: 'none' as RecurrenceType };
+        updateFirestoreTask(updated);
+        return updated;
+      }
+      return t;
+    }));
     if (viewingTask?.id === taskId) {
       setViewingTask(prev => prev ? { ...prev, recurrence: 'none' as RecurrenceType } : null);
     }
-  }, [viewingTask?.id]);
+  }, [viewingTask?.id, user]);
 
   const deleteTask = useCallback((id: string) => {
     setTaskToDelete(id);
@@ -519,11 +664,12 @@ const App: React.FC = () => {
   const confirmDelete = useCallback(() => {
     if (taskToDelete) {
       setTasks(prev => prev.filter(t => t.id !== taskToDelete));
+      deleteFirestoreTask(taskToDelete);
       setTaskToDelete(null);
       setIsDeleteConfirmOpen(false);
       setViewingTask(null);
     }
-  }, [taskToDelete]);
+  }, [taskToDelete, user]);
 
   const onDragStart = useCallback(() => {
     setIsDraggingGlobal(true);
@@ -569,8 +715,8 @@ const App: React.FC = () => {
           const finishTag = `Terminado em: ${formatTagDate(movedTask.completedAt)}`;
           movedTask.tags = movedTask.tags.filter(tag => !tag.startsWith('Terminado em:') && tag !== 'Atrasada');
           movedTask.tags.push(finishTag);
-          grantXp(XP_PER_TASK[movedTask.priority]);
-          addNotification('xp', `Jornada Concluída! +${XP_PER_TASK[movedTask.priority]} XP`, XP_PER_TASK[movedTask.priority]);
+          grantXp(XP_PER_TASK);
+          addNotification('xp', `Jornada Concluída! +${XP_PER_TASK} XP`, XP_PER_TASK);
         } else if (newStatus === 'in-progress' && oldStatus === 'todo') {
           movedTask.startedAt = Date.now();
           const startTag = `Começado em: ${formatTagDate(movedTask.startedAt)}`;
@@ -621,8 +767,19 @@ const App: React.FC = () => {
       
       newTasks.splice(insertIndex, 0, movedTask);
       
-      // Atualizar orders para manter consistência (opcional se usarmos a ordem do array)
-      return newTasks.map((t, i) => ({ ...t, order: i }));
+      // Atualizar orders para manter consistência
+      const finalTasks = newTasks.map((t, i) => ({ ...t, order: i }));
+      
+      // Sincronizar em lote se logado
+      if (user) {
+        const batch = writeBatch(db);
+        finalTasks.forEach(t => {
+          batch.set(doc(db, 'users', user.uid, 'tasks', t.id), t);
+        });
+        batch.commit();
+      }
+
+      return finalTasks;
     });
   }, [grantXp, addNotification, updateActivity, tasks]);
 
@@ -713,6 +870,8 @@ const App: React.FC = () => {
         <Sidebar 
           stats={stats} 
           tasks={tasks}
+          user={user}
+          isSyncing={isSyncing}
           selectedDate={selectedDate}
           onDateSelect={setSelectedDate}
           onFocusComplete={() => {
@@ -800,14 +959,6 @@ const App: React.FC = () => {
           </div>
           
           <div className="hidden md:flex items-center gap-6 ml-4">
-            <div className="flex items-center gap-3 bg-white dark:bg-slate-900 px-5 py-2 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-lg group/streak">
-              <Flame className={`w-5 h-5 transition-transform duration-500 group-hover/streak:scale-125 ${stats.streak > 0 ? 'text-orange-500 fill-orange-500 animate-pulse' : 'text-slate-300 dark:text-slate-700'}`} />
-              <div className="flex flex-col">
-                <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest leading-none">Sequência</span>
-                <span className="text-sm font-black text-slate-900 dark:text-slate-100">{stats.streak} Dias</span>
-              </div>
-            </div>
-
             <button 
               onClick={() => { setEditingTask(null); setIsModalOpen(true); }}
               className={`flex items-center gap-3 px-8 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl transition-all active:scale-95 border
@@ -820,10 +971,7 @@ const App: React.FC = () => {
           </div>
 
           <div className="md:hidden flex items-center gap-2 ml-2">
-            <div className="flex items-center gap-1.5 bg-white dark:bg-slate-900 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800">
-               <Flame className={`w-4 h-4 ${stats.streak > 0 ? 'text-orange-500 fill-orange-500' : 'text-slate-300 dark:text-slate-700'}`} />
-               <span className="text-xs font-black text-slate-900 dark:text-slate-100">{stats.streak}</span>
-            </div>
+            {/* Visor de sequência removido conforme solicitado */}
           </div>
         </div>
 
@@ -966,7 +1114,6 @@ const App: React.FC = () => {
           onClose={() => setViewingTask(null)} 
           onCancelRecurrence={cancelRecurrence}
           onDelete={deleteTask}
-          onToggleSubtask={toggleSubtask}
           onEdit={(task) => {
             setViewingTask(null);
             setEditingTask(task);
@@ -983,9 +1130,13 @@ const App: React.FC = () => {
         <ProfileModal 
           stats={stats}
           theme={theme}
+          user={user}
+          isSyncing={isSyncing}
           onThemeChange={setTheme}
           onClose={() => setIsProfileModalOpen(false)}
           onSave={updateProfile}
+          onLogin={handleLogin}
+          onLogout={handleLogout}
         />
       )}
 
@@ -1023,7 +1174,7 @@ const App: React.FC = () => {
             >
               {n.type === 'xp' ? (
                 <div className="p-1.5 bg-white/20 rounded-lg">
-                  <Flame className="w-4 h-4 text-white fill-white" />
+                  <Zap className="w-4 h-4 text-white fill-white" />
                 </div>
               ) : (
                 <div className="p-1.5 bg-indigo-100 dark:bg-indigo-900/40 rounded-lg">
@@ -1130,24 +1281,11 @@ const ScheduledTasksModal = React.memo<{tasks: Task[], onClose: () => void, onVi
 const TaskModal: React.FC<{task: any, onClose: any, onSave: any}> = ({ task, onClose, onSave }) => {
   const [title, setTitle] = useState(task?.title || '');
   const [description, setDescription] = useState(task?.description || '');
-  const [priority, setPriority] = useState<Priority>(task?.priority || 'medium');
   const [recurrence, setRecurrence] = useState<RecurrenceType>(task?.recurrence || 'none');
   const [recurrenceDays, setRecurrenceDays] = useState<number[]>(task?.recurrenceDays || []);
   const [recurrenceEndDate, setRecurrenceEndDate] = useState<string>(
     task?.recurrenceEndDate ? new Date(task.recurrenceEndDate).toISOString().split('T')[0] : ''
   );
-  const [subtasks, setSubtasks] = useState<any[]>(task?.subtasks || []);
-  const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
-
-  const addSubtask = () => {
-    if (!newSubtaskTitle.trim()) return;
-    setSubtasks(prev => [...prev, { id: generateId(), title: newSubtaskTitle, isCompleted: false }]);
-    setNewSubtaskTitle('');
-  };
-
-  const removeSubtask = (id: string) => {
-    setSubtasks(prev => prev.filter(s => s.id !== id));
-  };
 
   const toggleDay = (day: number) => {
     setRecurrenceDays(prev => 
@@ -1171,10 +1309,8 @@ const TaskModal: React.FC<{task: any, onClose: any, onSave: any}> = ({ task, onC
           onSave({ 
             title, 
             description, 
-            priority, 
             recurrence, 
             recurrenceDays,
-            subtasks,
             recurrenceEndDate: recurrenceEndDate ? new Date(recurrenceEndDate).getTime() : undefined 
           });
         }} className="p-6 md:p-10 space-y-6 md:space-y-8 overflow-y-auto custom-scrollbar">
@@ -1198,26 +1334,10 @@ const TaskModal: React.FC<{task: any, onClose: any, onSave: any}> = ({ task, onC
             />
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
-            <div className="space-y-4 md:space-y-5">
-              <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest ml-2">Prioridade</label>
-              <div className="flex flex-col gap-2">
-                {(['low', 'medium', 'high'] as Priority[]).map((p) => (
-                  <button
-                    key={p} type="button" onClick={() => setPriority(p)}
-                    className={`py-3 px-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border-2 text-left flex items-center justify-between
-                      ${priority === p ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-slate-50 dark:bg-slate-950 text-slate-500 dark:text-slate-600 border-slate-200 dark:border-slate-800'} text-xs md:text-sm font-bold`}
-                  >
-                    {p === 'low' ? 'Baixa' : p === 'medium' ? 'Média' : 'Alta'}
-                    {priority === p && <CheckCircle className="w-4 h-4" />}
-                  </button>
-                ))}
-              </div>
-            </div>
-
+          <div className="grid grid-cols-1 gap-6 md:gap-8">
             <div className="space-y-4 md:space-y-5">
               <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest ml-2">Repetição</label>
-              <div className="flex flex-col gap-2">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                 {(['none', 'daily', 'weekly', 'monthly'] as RecurrenceType[]).map((r) => (
                   <button
                     key={r} type="button" onClick={() => {
@@ -1275,44 +1395,6 @@ const TaskModal: React.FC<{task: any, onClose: any, onSave: any}> = ({ task, onC
               </div>
             </div>
           )}
-
-          <div className="space-y-4">
-            <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest ml-2">Subtarefas (Checklist)</label>
-            <div className="space-y-3">
-              <div className="flex gap-2">
-                <input 
-                  type="text" 
-                  value={newSubtaskTitle} 
-                  onChange={(e) => setNewSubtaskTitle(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addSubtask())}
-                  placeholder="Adicionar item..."
-                  className="flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500/20"
-                />
-                <button 
-                  type="button"
-                  onClick={addSubtask}
-                  className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-500 transition-colors shadow-lg shadow-indigo-500/20"
-                >
-                  <Plus className="w-5 h-5" />
-                </button>
-              </div>
-              
-              <div className="space-y-2">
-                {subtasks.map(s => (
-                  <div key={s.id} className="flex items-center justify-between bg-slate-50 dark:bg-slate-950/50 p-3 rounded-xl border border-slate-100 dark:border-slate-800/50 group">
-                    <span className="text-xs font-medium text-slate-700 dark:text-slate-300">{s.title}</span>
-                    <button 
-                      type="button"
-                      onClick={() => removeSubtask(s.id)}
-                      className="p-1 text-slate-400 hover:text-rose-500 transition-colors opacity-0 group-hover:opacity-100"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
 
           <div className="space-y-4">
             <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest ml-2">Data Limite (Opcional)</label>

@@ -1,17 +1,32 @@
 
 import React, { useState, useRef } from 'react';
-import { X, Camera, Save, User, Moon, Sun, Upload } from 'lucide-react';
+import { X, Camera, Save, User, Moon, Sun, Upload, LogIn, LogOut, Cloud, CheckCircle2 } from 'lucide-react';
 import { UserStats } from '../types';
+import { User as FirebaseUser } from 'firebase/auth';
 
 interface ProfileModalProps {
   stats: UserStats;
   theme: 'light' | 'dark';
+  user: FirebaseUser | null;
+  isSyncing?: boolean;
   onThemeChange: (theme: 'light' | 'dark') => void;
   onClose: () => void;
   onSave: (data: Partial<UserStats>) => void;
+  onLogin: () => void;
+  onLogout: () => void;
 }
 
-const ProfileModal: React.FC<ProfileModalProps> = React.memo(({ stats, theme, onThemeChange, onClose, onSave }) => {
+const ProfileModal: React.FC<ProfileModalProps> = React.memo(({ 
+  stats, 
+  theme, 
+  user, 
+  isSyncing,
+  onThemeChange, 
+  onClose, 
+  onSave,
+  onLogin,
+  onLogout
+}) => {
   const [name, setName] = useState(stats.name || 'Usuário');
   const [avatarUrl, setAvatarUrl] = useState(stats.avatarUrl || 'https://api.dicebear.com/7.x/initials/svg?seed=U&backgroundColor=cbd5e1&fontSize=40');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -90,31 +105,56 @@ const ProfileModal: React.FC<ProfileModalProps> = React.memo(({ stats, theme, on
               />
             </div>
 
-            {/* Conquistas */}
-            <div className="space-y-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+            {/* Seção de Nuvem (Cloud Save) */}
+            <div className="space-y-3 pt-4 border-t border-slate-100 dark:border-slate-800">
               <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest ml-2 flex items-center gap-2">
-                Conquistas Desbloqueadas
+                <Cloud className="w-3 h-3" /> Sincronização em Nuvem
               </label>
-              <div className="grid grid-cols-2 gap-3">
-                {stats.achievements && stats.achievements.length > 0 ? (
-                  stats.achievements.map(achievement => (
-                    <div 
-                      key={achievement.id}
-                      className="p-4 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/40 rounded-2xl flex flex-col items-center text-center gap-2 animate-in zoom-in duration-300"
-                    >
-                      <span className="text-3xl">{achievement.icon}</span>
-                      <div className="space-y-1">
-                        <h4 className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-tight">{achievement.title}</h4>
-                        <p className="text-[8px] text-slate-500 dark:text-slate-500 font-bold leading-tight">{achievement.description}</p>
+              
+              {!user ? (
+                <button
+                  type="button"
+                  onClick={onLogin}
+                  className="w-full flex items-center justify-center gap-3 py-4 rounded-2xl bg-white dark:bg-slate-950 border-2 border-slate-200 dark:border-slate-800 hover:border-indigo-500 dark:hover:border-indigo-500 transition-all font-bold text-sm text-slate-700 dark:text-slate-300 group"
+                >
+                  <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5" />
+                  Conectar com Google
+                </button>
+              ) : (
+                <div className="space-y-3">
+                  <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/40 rounded-2xl flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-emerald-500">
+                        <img src={user.photoURL || ''} alt={user.displayName || ''} className="w-full h-full object-cover" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-black text-emerald-700 dark:text-emerald-400 truncate">{user.displayName}</p>
+                        <p className="text-[10px] text-emerald-600/70 dark:text-emerald-500/70 font-bold truncate">{user.email}</p>
                       </div>
                     </div>
-                  ))
-                ) : (
-                  <div className="col-span-2 py-8 bg-slate-50 dark:bg-slate-950/50 border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl flex flex-col items-center justify-center opacity-50">
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nenhuma conquista ainda</p>
+                    <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span className="text-[10px] font-black uppercase tracking-tighter">Conectado</span>
+                    </div>
                   </div>
-                )}
-              </div>
+                  
+                  <button
+                    type="button"
+                    onClick={onLogout}
+                    className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:bg-red-50 dark:hover:bg-red-950/30 hover:border-red-200 dark:hover:border-red-900/40 hover:text-red-600 dark:hover:text-red-400 transition-all font-bold text-[10px] text-slate-500 dark:text-slate-500 uppercase tracking-widest"
+                  >
+                    <LogOut className="w-3 h-3" />
+                    Desconectar Conta
+                  </button>
+                </div>
+              )}
+              
+              {isSyncing && (
+                <div className="flex items-center justify-center gap-2 py-2">
+                  <div className="w-3 h-3 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+                  <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-widest">Sincronizando...</span>
+                </div>
+              )}
             </div>
 
             {/* Seção de Tema (Aparência) - Agora no final */}

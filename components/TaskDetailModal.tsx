@@ -2,14 +2,13 @@
 import React from 'react';
 import { X, Calendar, Clock, AlertTriangle, AlignLeft, PlayCircle, CheckCircle, Repeat, Trash, Edit3, ArrowRight } from 'lucide-react';
 import { Task, TaskStatus } from '../types';
-import { PRIORITY_CONFIG, STATUS_CONFIG } from '../constants';
+import { STATUS_CONFIG } from '../constants';
 
 interface TaskDetailModalProps {
   task: Task;
   onClose: () => void;
   onCancelRecurrence?: (taskId: string) => void;
   onDelete?: (taskId: string) => void;
-  onToggleSubtask?: (taskId: string, subtaskId: string) => void;
   onEdit?: (task: Task) => void;
   onUpdateStatus?: (taskId: string, status: TaskStatus) => void;
 }
@@ -19,11 +18,9 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = React.memo(({
   onClose, 
   onCancelRecurrence, 
   onDelete, 
-  onToggleSubtask,
   onEdit,
   onUpdateStatus
 }) => {
-  const priority = PRIORITY_CONFIG[task.priority];
   const status = STATUS_CONFIG[task.status];
   const createdAtStr = new Date(task.createdAt).toLocaleString('pt-BR');
   
@@ -82,12 +79,8 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = React.memo(({
 
         {/* Content */}
         <div className="p-10 space-y-10 overflow-y-auto custom-scrollbar">
-          {/* Status e Prioridade */}
+          {/* Status */}
           <div className="flex flex-wrap gap-4">
-            <span className={`text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-full border flex items-center gap-2 ${priority.color}`}>
-              {priority.icon}
-              Prioridade {priority.label}
-            </span>
             {isDelayed && (
               <span className="text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-full bg-rose-500 text-white border border-rose-400 flex items-center gap-2 animate-pulse shadow-lg shadow-rose-900/40">
                 {isOverdue ? '💣' : <AlertTriangle className="w-4 h-4 fill-white/20" />}
@@ -125,38 +118,6 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = React.memo(({
               )}
             </div>
           </div>
-
-          {/* Subtarefas */}
-          {task.subtasks && task.subtasks.length > 0 && (
-            <div className="space-y-4">
-              <div className="flex items-center gap-2 text-slate-500">
-                <CheckCircle className="w-4 h-4" />
-                <span className="text-[10px] font-black uppercase tracking-widest">Checklist de Subtarefas</span>
-              </div>
-              <div className="grid gap-3">
-                {task.subtasks.map(s => (
-                  <button 
-                    key={s.id}
-                    onClick={() => onToggleSubtask?.(task.id, s.id)}
-                    className={`flex items-center gap-4 p-5 rounded-2xl border transition-all text-left group
-                      ${s.isCompleted 
-                        ? 'bg-emerald-900/10 border-emerald-900/30 text-emerald-400' 
-                        : 'bg-slate-950/50 border-slate-800 text-slate-300 hover:border-indigo-500/50'}`}
-                  >
-                    <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all
-                      ${s.isCompleted 
-                        ? 'bg-emerald-500 border-emerald-500 text-white' 
-                        : 'border-slate-700 group-hover:border-indigo-500'}`}>
-                      {s.isCompleted && <CheckCircle className="w-4 h-4" />}
-                    </div>
-                    <span className={`text-sm font-bold ${s.isCompleted ? 'line-through opacity-50' : ''}`}>
-                      {s.title}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
 
           {/* Seção de Recorrência */}
           {isRecurring && (

@@ -1,0 +1,54 @@
+{
+  "entities": {
+    "UserStats": {
+      "title": "UserStats",
+      "description": "User profile and gamification statistics",
+      "type": "object",
+      "properties": {
+        "level": { "type": "number" },
+        "xp": { "type": "number" },
+        "totalXp": { "type": "number" },
+        "tasksCompleted": { "type": "number" },
+        "name": { "type": "string" },
+        "avatarUrl": { "type": "string" },
+        "bio": { "type": "string" },
+        "streak": { "type": "number" },
+        "lastActivityTimestamp": { "type": "number" },
+        "lastPenaltyTimestamp": { "type": "number" },
+        "activeDays": { "type": "array", "items": { "type": "string" } },
+        "focusSessionsCompleted": { "type": "number" }
+      },
+      "required": ["level", "xp", "totalXp", "tasksCompleted", "streak"]
+    },
+    "Task": {
+      "title": "Task",
+      "description": "A task created by the user",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "status": { "type": "string", "enum": ["todo", "in-progress", "done"] },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "number" },
+        "order": { "type": "number" },
+        "startedAt": { "type": "number" },
+        "completedAt": { "type": "number" },
+        "recurrence": { "type": "string", "enum": ["none", "daily", "weekly", "monthly"] },
+        "recurrenceEndDate": { "type": "number" },
+        "recurrenceDays": { "type": "array", "items": { "type": "number" } }
+      },
+      "required": ["id", "title", "status", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserStats",
+      "description": "User profile and stats"
+    },
+    "/users/{userId}/tasks/{taskId}": {
+      "schema": "Task",
+      "description": "User's tasks"
+    }
+  }
+}

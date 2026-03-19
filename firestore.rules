@@ -1,0 +1,111 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId}
+    // Fields:
+    //   - level: number (required)
+    //   - xp: number (required)
+    //   - totalXp: number (required)
+    //   - tasksCompleted: number (required)
+    //   - name: string (optional)
+    //   - avatarUrl: string (optional)
+    //   - bio: string (optional)
+    //   - streak: number (required)
+    //   - lastActivityTimestamp: number (optional)
+    //   - lastPenaltyTimestamp: number (optional)
+    //   - activeDays: list (optional)
+    //   - focusSessionsCompleted: number (optional)
+    //
+    // Collection: users/{userId}/tasks
+    // Document ID: {taskId}
+    // Fields:
+    //   - id: string (required)
+    //   - title: string (required)
+    //   - description: string (optional)
+    //   - status: string (required, enum: todo, in-progress, done)
+    //   - tags: list (optional)
+    //   - createdAt: number (required)
+    //   - order: number (optional)
+    //   - startedAt: number (optional)
+    //   - completedAt: number (optional)
+    //   - recurrence: string (optional, enum: none, daily, weekly, monthly)
+    //   - recurrenceEndDate: number (optional)
+    //   - recurrenceDays: list (optional)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+    
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUserStats(data) {
+      return data.level is number && data.level >= 1 &&
+             data.xp is number && data.xp >= 0 &&
+             data.totalXp is number && data.totalXp >= 0 &&
+             data.tasksCompleted is number && data.tasksCompleted >= 0 &&
+             data.streak is number && data.streak >= 0 &&
+             (!('name' in data) || (data.name is string && data.name.size() < 100)) &&
+             (!('avatarUrl' in data) || (data.avatarUrl is string && data.avatarUrl.size() < 500)) &&
+             (!('bio' in data) || (data.bio is string && data.bio.size() < 500)) &&
+             (!('activeDays' in data) || data.activeDays is list);
+    }
+
+    function isValidTask(data) {
+      return data.id is string && data.id.size() > 0 &&
+             data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
+             data.status in ['todo', 'in-progress', 'done'] &&
+             data.createdAt is number &&
+             (!('description' in data) || (data.description is string && data.description.size() < 2000)) &&
+             (!('tags' in data) || data.tags is list) &&
+             (!('recurrence' in data) || data.recurrence in ['none', 'daily', 'weekly', 'monthly']);
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUserStats(request.resource.data);
+      allow update: if isOwner(userId) && isValidUserStats(request.resource.data);
+      allow delete: if isOwner(userId);
+
+      match /tasks/{taskId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidTask(request.resource.data);
+        allow update: if isOwner(userId) && isValidTask(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+    }
+
+    // Default deny
+    match /{path=**} {
+      allow read, write: if false;
+    }
+  }
+}
