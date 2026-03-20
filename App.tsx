@@ -100,6 +100,38 @@ const AppContent: React.FC = () => {
     d.setHours(0, 0, 0, 0);
     return d.getTime();
   });
+
+  // Check if Firebase is initialized
+  if (!auth || !db) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-950 text-slate-100 p-4">
+        <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-8 text-center shadow-2xl">
+          <div className="w-20 h-20 bg-amber-500/10 rounded-full flex items-center justify-center mx-auto mb-8">
+            <AlertCircle className="w-10 h-10 text-amber-500" />
+          </div>
+          <h1 className="text-2xl font-black mb-4 uppercase tracking-tight">Configuração Pendente</h1>
+          <p className="text-slate-400 mb-8 leading-relaxed font-medium">
+            O aplicativo não conseguiu inicializar o banco de dados. Isso geralmente acontece quando as variáveis de ambiente do Firebase não foram configuradas no Netlify.
+          </p>
+          <div className="bg-slate-950 rounded-2xl p-4 mb-8 text-left border border-slate-800">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">O que fazer:</p>
+            <ul className="text-xs text-slate-400 space-y-2 font-medium">
+              <li>1. Vá ao painel do Netlify</li>
+              <li>2. Site settings › Build & deploy › Environment</li>
+              <li>3. Adicione as variáveis VITE_FIREBASE_*</li>
+              <li>4. Faça um novo deploy</li>
+            </ul>
+          </div>
+          <button
+            onClick={() => window.location.reload()}
+            className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl hover:bg-indigo-500 transition-all uppercase tracking-widest text-xs"
+          >
+            Tentar Novamente
+          </button>
+        </div>
+      </div>
+    );
+  }
   
   const handleLogin = async () => {
     try {

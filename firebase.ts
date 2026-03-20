@@ -12,10 +12,17 @@ const firebaseConfig = {
   firestoreDatabaseId: import.meta.env.VITE_FIREBASE_DATABASE_ID
 };
 
-// Initialize Firebase SDK
-const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
-export const auth = getAuth(app);
+// Validate config before initialization
+const isConfigValid = !!firebaseConfig.apiKey && !!firebaseConfig.projectId;
+
+if (!isConfigValid) {
+  console.error("Firebase configuration is missing. Please check your environment variables.");
+}
+
+// Initialize Firebase SDK safely
+const app = isConfigValid ? initializeApp(firebaseConfig) : null;
+export const db = app ? getFirestore(app, firebaseConfig.firestoreDatabaseId) : (null as any);
+export const auth = app ? getAuth(app) : (null as any);
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({
   prompt: 'select_account'
