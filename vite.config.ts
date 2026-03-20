@@ -33,7 +33,7 @@ export default defineConfig(({ mode }) => {
       define: {
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY || null),
         'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY || null),
-        // Inject Firebase config as fallbacks for process.env
+        // Inject Firebase config for both local and production
         'process.env.VITE_FIREBASE_API_KEY': JSON.stringify(env.VITE_FIREBASE_API_KEY || firebaseConfig.VITE_FIREBASE_API_KEY || null),
         'process.env.VITE_FIREBASE_AUTH_DOMAIN': JSON.stringify(env.VITE_FIREBASE_AUTH_DOMAIN || firebaseConfig.VITE_FIREBASE_AUTH_DOMAIN || null),
         'process.env.VITE_FIREBASE_PROJECT_ID': JSON.stringify(env.VITE_FIREBASE_PROJECT_ID || firebaseConfig.VITE_FIREBASE_PROJECT_ID || null),

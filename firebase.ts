@@ -7,26 +7,27 @@ import { getFirestore, doc, getDoc, setDoc, onSnapshot, collection, query, where
 const clean = (val: any) => (val === 'null' || val === 'undefined' || !val) ? null : val;
 
 // Use environment variables if available (for Netlify/Production)
-// We use both import.meta.env (Vite standard) and process.env (our custom injection)
+// We use process.env because we inject everything there in vite.config.ts
 const firebaseConfig = {
-  apiKey: clean(import.meta.env.VITE_FIREBASE_API_KEY) || clean((process.env as any).VITE_FIREBASE_API_KEY),
-  authDomain: clean(import.meta.env.VITE_FIREBASE_AUTH_DOMAIN) || clean((process.env as any).VITE_FIREBASE_AUTH_DOMAIN),
-  projectId: clean(import.meta.env.VITE_FIREBASE_PROJECT_ID) || clean((process.env as any).VITE_FIREBASE_PROJECT_ID),
-  appId: clean(import.meta.env.VITE_FIREBASE_APP_ID) || clean((process.env as any).VITE_FIREBASE_APP_ID),
-  firestoreDatabaseId: clean(import.meta.env.VITE_FIREBASE_DATABASE_ID) || clean((process.env as any).VITE_FIREBASE_DATABASE_ID)
+  apiKey: clean((process.env as any).VITE_FIREBASE_API_KEY) || clean(import.meta.env.VITE_FIREBASE_API_KEY),
+  authDomain: clean((process.env as any).VITE_FIREBASE_AUTH_DOMAIN) || clean(import.meta.env.VITE_FIREBASE_AUTH_DOMAIN),
+  projectId: clean((process.env as any).VITE_FIREBASE_PROJECT_ID) || clean(import.meta.env.VITE_FIREBASE_PROJECT_ID),
+  appId: clean((process.env as any).VITE_FIREBASE_APP_ID) || clean(import.meta.env.VITE_FIREBASE_APP_ID),
+  firestoreDatabaseId: clean((process.env as any).VITE_FIREBASE_DATABASE_ID) || clean(import.meta.env.VITE_FIREBASE_DATABASE_ID)
 };
 
-// Validate config before initialization
-const isConfigValid = !!firebaseConfig.apiKey && !!firebaseConfig.projectId;
+// Log config status for debugging (values are hidden for security)
+console.log("Firebase config check:", {
+  hasApiKey: !!firebaseConfig.apiKey,
+  hasProjectId: !!firebaseConfig.projectId,
+  env: import.meta.env.MODE
+});
 
-if (!isConfigValid) {
-  console.error("Firebase configuration is missing. Please check your environment variables.");
-}
-
-// Initialize Firebase SDK safely
-const app = isConfigValid ? initializeApp(firebaseConfig) : null;
-export const db = app ? getFirestore(app, firebaseConfig.firestoreDatabaseId) : (null as any);
-export const auth = app ? getAuth(app) : (null as any);
+// Initialize Firebase SDK
+// We attempt initialization even if fields are missing to see the actual error in console
+const app = initializeApp(firebaseConfig);
+export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({
   prompt: 'select_account'
