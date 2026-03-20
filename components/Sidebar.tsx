@@ -331,6 +331,9 @@ const Sidebar: React.FC<SidebarProps> = React.memo(({
     const pendingAtEndOfDay = tasks.filter(t => t.createdAt <= endOfDay && (!t.completedAt || t.completedAt > endOfDay)).length;
     if (totalTasksOnDay > 0 && pendingAtEndOfDay === 0) return '😎';
 
+    // ✅ - Dia em que houve atividade (sequência mantida)
+    if (stats.activeDays?.includes(dStr)) return '✅';
+
     return null;
   };
 
