@@ -3,26 +3,21 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
 import { getFirestore, doc, getDoc, setDoc, onSnapshot, collection, query, where, getDocs, getDocFromServer, deleteDoc } from 'firebase/firestore';
 
-// Function to get config value safely
-const getConfigValue = (key: string) => {
-  const value = import.meta.env[key] || (process.env as any)[key];
-  return (value === 'null' || value === 'undefined') ? null : value;
-};
+// Helper to clean "null" strings or undefined values
+const clean = (val: any) => (val === 'null' || val === 'undefined' || !val) ? null : val;
 
 // Use environment variables if available (for Netlify/Production)
+// We use both import.meta.env (Vite standard) and process.env (our custom injection)
 const firebaseConfig = {
-  apiKey: getConfigValue('VITE_FIREBASE_API_KEY'),
-  authDomain: getConfigValue('VITE_FIREBASE_AUTH_DOMAIN'),
-  projectId: getConfigValue('VITE_FIREBASE_PROJECT_ID'),
-  appId: getConfigValue('VITE_FIREBASE_APP_ID'),
-  firestoreDatabaseId: getConfigValue('VITE_FIREBASE_DATABASE_ID')
+  apiKey: clean(import.meta.env.VITE_FIREBASE_API_KEY) || clean((process.env as any).VITE_FIREBASE_API_KEY),
+  authDomain: clean(import.meta.env.VITE_FIREBASE_AUTH_DOMAIN) || clean((process.env as any).VITE_FIREBASE_AUTH_DOMAIN),
+  projectId: clean(import.meta.env.VITE_FIREBASE_PROJECT_ID) || clean((process.env as any).VITE_FIREBASE_PROJECT_ID),
+  appId: clean(import.meta.env.VITE_FIREBASE_APP_ID) || clean((process.env as any).VITE_FIREBASE_APP_ID),
+  firestoreDatabaseId: clean(import.meta.env.VITE_FIREBASE_DATABASE_ID) || clean((process.env as any).VITE_FIREBASE_DATABASE_ID)
 };
 
 // Validate config before initialization
-const isConfigValid = !!firebaseConfig.apiKey && 
-                     !!firebaseConfig.projectId && 
-                     firebaseConfig.apiKey !== 'null' && 
-                     firebaseConfig.projectId !== 'null';
+const isConfigValid = !!firebaseConfig.apiKey && !!firebaseConfig.projectId;
 
 if (!isConfigValid) {
   console.error("Firebase configuration is missing. Please check your environment variables.");
