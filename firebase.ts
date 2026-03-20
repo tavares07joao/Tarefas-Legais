@@ -3,17 +3,26 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
 import { getFirestore, doc, getDoc, setDoc, onSnapshot, collection, query, where, getDocs, getDocFromServer, deleteDoc } from 'firebase/firestore';
 
+// Function to get config value safely
+const getConfigValue = (key: string) => {
+  const value = import.meta.env[key] || (process.env as any)[key];
+  return (value === 'null' || value === 'undefined') ? null : value;
+};
+
 // Use environment variables if available (for Netlify/Production)
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
-  firestoreDatabaseId: import.meta.env.VITE_FIREBASE_DATABASE_ID
+  apiKey: getConfigValue('VITE_FIREBASE_API_KEY'),
+  authDomain: getConfigValue('VITE_FIREBASE_AUTH_DOMAIN'),
+  projectId: getConfigValue('VITE_FIREBASE_PROJECT_ID'),
+  appId: getConfigValue('VITE_FIREBASE_APP_ID'),
+  firestoreDatabaseId: getConfigValue('VITE_FIREBASE_DATABASE_ID')
 };
 
 // Validate config before initialization
-const isConfigValid = !!firebaseConfig.apiKey && !!firebaseConfig.projectId;
+const isConfigValid = !!firebaseConfig.apiKey && 
+                     !!firebaseConfig.projectId && 
+                     firebaseConfig.apiKey !== 'null' && 
+                     firebaseConfig.projectId !== 'null';
 
 if (!isConfigValid) {
   console.error("Firebase configuration is missing. Please check your environment variables.");
