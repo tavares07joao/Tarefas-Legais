@@ -43,6 +43,16 @@ const safeLocalStorageSet = (key: string, value: string) => {
   }
 };
 
+const cleanObject = (obj: any) => {
+  const newObj = { ...obj };
+  Object.keys(newObj).forEach(key => {
+    if (newObj[key] === undefined) {
+      delete newObj[key];
+    }
+  });
+  return newObj;
+};
+
 const AppContent: React.FC = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
@@ -142,16 +152,16 @@ const AppContent: React.FC = () => {
               const batch = writeBatch(db);
               
               // Salvar stats
-              batch.set(doc(db, 'users', currentUser.uid), {
+              batch.set(doc(db, 'users', currentUser.uid), cleanObject({
                 ...stats,
                 ...localStats,
                 name: currentUser.displayName || stats.name,
                 avatarUrl: currentUser.photoURL || stats.avatarUrl
-              });
+              }));
               
               // Salvar tasks
               localTasks.forEach((task: Task) => {
-                batch.set(doc(db, 'users', currentUser.uid, 'tasks', task.id), task);
+                batch.set(doc(db, 'users', currentUser.uid, 'tasks', task.id), cleanObject(task));
               });
               
               await batch.commit();
@@ -212,7 +222,7 @@ const AppContent: React.FC = () => {
     const syncStats = async () => {
       const path = `users/${user.uid}`;
       try {
-        await setDoc(doc(db, 'users', user.uid), stats, { merge: true });
+        await setDoc(doc(db, 'users', user.uid), cleanObject(stats), { merge: true });
       } catch (error) {
         handleFirestoreError(error, OperationType.WRITE, path);
       }
@@ -235,7 +245,7 @@ const AppContent: React.FC = () => {
     if (!user) return;
     const path = `users/${user.uid}/tasks/${task.id}`;
     try {
-      await setDoc(doc(db, 'users', user.uid, 'tasks', task.id), task);
+      await setDoc(doc(db, 'users', user.uid, 'tasks', task.id), cleanObject(task));
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, path);
     }
@@ -795,7 +805,7 @@ const AppContent: React.FC = () => {
       if (user) {
         const batch = writeBatch(db);
         finalTasks.forEach(t => {
-          batch.set(doc(db, 'users', user.uid, 'tasks', t.id), t);
+          batch.set(doc(db, 'users', user.uid, 'tasks', t.id), cleanObject(t));
         });
         batch.commit().catch(error => {
           handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}/tasks`);
