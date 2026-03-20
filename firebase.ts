@@ -3,16 +3,13 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
 import { getFirestore, doc, getDoc, setDoc, onSnapshot, collection, query, where, getDocs, getDocFromServer, deleteDoc } from 'firebase/firestore';
 
-// Import the Firebase configuration
-import configJson from './firebase-applet-config.json';
-
-// Use environment variables if available (for Netlify/Production), fallback to JSON
+// Use environment variables if available (for Netlify/Production)
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || configJson.apiKey,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || configJson.authDomain,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || configJson.projectId,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || configJson.appId,
-  firestoreDatabaseId: import.meta.env.VITE_FIREBASE_DATABASE_ID || configJson.firestoreDatabaseId
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  firestoreDatabaseId: import.meta.env.VITE_FIREBASE_DATABASE_ID
 };
 
 // Initialize Firebase SDK
