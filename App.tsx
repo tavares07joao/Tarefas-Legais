@@ -43,14 +43,28 @@ const safeLocalStorageSet = (key: string, value: string) => {
   }
 };
 
-const cleanObject = (obj: any) => {
-  const newObj = { ...obj };
-  Object.keys(newObj).forEach(key => {
-    if (newObj[key] === undefined) {
-      delete newObj[key];
+const cleanObject = (obj: any): any => {
+  if (obj === null || typeof obj !== 'object') return obj;
+  
+  if (Array.isArray(obj)) {
+    return obj
+      .filter(v => v !== undefined)
+      .map(v => cleanObject(v));
+  }
+  
+  const cleaned: any = {};
+  for (const key in obj) {
+    if (Object.prototype.hasOwnProperty.call(obj, key)) {
+      const value = obj[key];
+      if (value !== undefined) {
+        const cleanedValue = cleanObject(value);
+        if (cleanedValue !== undefined) {
+          cleaned[key] = cleanedValue;
+        }
+      }
     }
-  });
-  return newObj;
+  }
+  return cleaned;
 };
 
 const AppContent: React.FC = () => {
